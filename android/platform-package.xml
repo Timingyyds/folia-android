@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ns2:repository
+  xmlns:ns2="http://schemas.android.com/repository/android/common/02"
+  xmlns:ns8="http://schemas.android.com/sdk/android/repo/repository2/03"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <license id="license-2A9D8C2F" type="text"/>
+  <localPackage path="platforms;android-36.1" obsolete="false">
+    <type-details xsi:type="ns8:platformDetailsType">
+      <api-level>36.1</api-level>
+      <extension-level>20</extension-level>
+      <base-extension>true</base-extension>
+      <layoutlib api="15"/>
+    </type-details>
+    <revision>
+      <major>1</major>
+    </revision>
+    <display-name>Android SDK Platform 36.1</display-name>
+    <uses-license ref="license-2A9D8C2F"/>
+  </localPackage>
+</ns2:repository>

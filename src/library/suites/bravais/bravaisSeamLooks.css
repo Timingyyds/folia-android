@@ -1,0 +1,45 @@
+/* src/library/suites/bravais/bravaisSeamLooks.css — 信息条（缝）的材质（2026-10-09，设计稿 §5「缝的材质」）：
+   「始终透明」的缝（has-clear-seam）与实色模式的预设（data-bravais-seam-style）。缝、书脊、面板、表单与边缘标签
+   （.bravais-seam / .bravais-seam-tab）都在这里换材质；叠色 / 熄灯的两层（::before / ::after，bravaisAppearance.css）
+   画在材质之上，照常生效。
+
+   - 背景：.bravais-seam / .bravais-seam-tab 画 var(--bravais-seam-surface, var(--bravais-seam-paper))（bravais.css）。
+     主题纸色（paper，默认）不写变量，沿用 bravais.css 的现状（透光档下 80% 的半透明纸）；其余预设由 stage 把
+     lib/libraryWallSeamStyle 的材质写成根节点上的 --bravais-seam-paper / --bravais-seam-surface（内联样式，压过
+     .is-see-through 的半透明纸——预设不随透光档变）。全是静态背景，不做动画。
+   - 印刷系（white / black）：缝里的主题变量换成固定的墨与纸（强调色也换成墨：单色印刷），菜单、勾选框、下拉框等
+     用主题变量画的控件随之成立；对比度约 17:1。主题系（frost 与四种图案）文字照旧是主题主色。
+   - 透明的缝：stage 不写预设变量（互斥：预设不生效），这里给一层主题底色的半透明纱（64%，透出的画面开了模糊时 50%）。
+     选择器多带一个 .lattice-root，压过同权重的 .bravais-root.is-see-through（全透明档的 80% 纸）。 */
+
+/* ---------- 印刷系：缝里换墨色 ---------- */
+
+.bravais-root:is([data-bravais-seam-style='white'], [data-bravais-seam-style='black']) :is(.bravais-seam, .bravais-seam-tab) {
+    --text-primary: var(--bravais-seam-print-ink);
+    --text-secondary: var(--bravais-seam-print-ink-soft);
+    --text-accent: var(--bravais-seam-print-ink);
+    --bg-color: var(--bravais-seam-paper);
+    --bravais-seam-ink-soft: var(--bravais-seam-print-ink-soft);
+}
+
+/* ---------- 透明的缝：一层半透明纱，透出后面的 visualizer ----------
+   文字可读性（不模糊时 64%）：午夜主题主色字对「纱 + 纯白画面」最坏约 6:1，次级字约 3:1；日光主题对纯黑画面约 6:1。
+   透出的画面开了模糊时画面只剩低频的色块，纱降到 50%，更通透。上沿一道很淡的主色渐变，把纸条的边界交代出来。 */
+.lattice-root.bravais-root.has-clear-seam {
+    --bravais-seam-paper: color-mix(in srgb, var(--bg-color, #070707) 64%, transparent);
+    --bravais-seam-surface:
+        linear-gradient(180deg, color-mix(in srgb, var(--text-primary, #f7f4ee) 6%, transparent), transparent 22%),
+        var(--bravais-seam-paper);
+}
+
+.lattice-root.bravais-root.has-clear-seam.has-backdrop-blur {
+    --bravais-seam-paper: color-mix(in srgb, var(--bg-color, #070707) 50%, transparent);
+}
+
+/* 纸条两侧一道主色发丝线（透明时缝的边界只靠阴影不够清楚）。 */
+.lattice-root.bravais-root.has-clear-seam :is(.bravais-seam, .bravais-seam-tab) {
+    box-shadow:
+        inset 1px 0 0 color-mix(in srgb, var(--text-primary, #f7f4ee) 12%, transparent),
+        inset -1px 0 0 color-mix(in srgb, var(--text-primary, #f7f4ee) 12%, transparent),
+        var(--bravais-seam-shadow);
+}

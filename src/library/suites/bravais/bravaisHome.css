@@ -1,0 +1,632 @@
+/* src/library/suites/bravais/bravaisHome.css
+   B9 首页的样式（设计稿 §10.5、§5「目录树」、§7.5）：首页窄缝里的页签、二级切换、管理隐藏开关、元数据行、
+   工具按钮格与「⋯」、全局搜索框；目录树面板的行与三态勾选框；首页磁贴的眼睛按钮、批量选中的勾，以及批量模式
+   里没选中的 / 管理隐藏视图里已隐藏的灰度 + 半透明（沿用 GridMap 的 opacity .35 + grayscale）。
+   单独成文件，不改 bravais.css 与 bravaisCollection.css 的已有块。 */
+
+/* ---------- 首页窄缝 ---------- */
+
+/* 五个一级页签竖排并列，像一排书脊（窄缝只有 120px）。
+   fb2 重排：从上到下是导航区（页头 + 二级切换 + 管理隐藏；唯一可伸缩的一段，放不下时在里面滚，滚动条不画）
+   → 扫描进度 → 账户位 → 状态 → 工具格，各段自然高度、互不重叠。页签一列一个、竖排；「书库」是页头最上面一行小字，
+   折叠按钮单独一行在它下面、页签列上面。缩减顺序：先隐藏标题，再把页签缩成一个字（.is-short），再不够导航区在里面滚
+   （量的是两份 .bravais-seam-home-measure）。
+   fb3：导航区里分上下两段——页头贴顶，中段（.bravais-seam-home-middle：扫描进度、二级切换、管理隐藏、状态、账户入口）
+   撑满页头与工具格之间的剩余空间、内容竖直居中；放不下时中段回到自然高度，与页头一起在导航区里滚。工具格固定四格。
+   fb4：账户入口移出中段，贴在工具格正上方（.bravais-seam-account），平台列表往上弹出、盖在导航区上。 */
+.bravais-seam-home {
+    --bravais-home-pad-x: 10px;
+    position: relative;
+    gap: 10px;
+    padding: 16px var(--bravais-home-pad-x) 0;
+}
+
+.bravais-seam-home.is-compact { --bravais-home-pad-x: 8px; gap: 10px; padding: 14px var(--bravais-home-pad-x) 0; }
+
+/* fb3：段间距写成变量（中段的上内边距要与它相等，内容才在页签与工具格之间真正居中）。数值沿用此前实际生效的
+   bravais.css（18 / 12；上面两条的 gap 被它盖住了）。 */
+.bravais-seam .bravais-seam-home { --bravais-home-gap: 18px; gap: var(--bravais-home-gap); }
+.bravais-seam .bravais-seam-home.is-compact { --bravais-home-gap: 12px; }
+.bravais-seam-home > * { flex: none; }
+
+.bravais-seam-home > .bravais-seam-home-nav {
+    display: flex;
+    width: 100%;
+    min-height: 0;
+    flex: 1 100 auto;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+/* 缩成一个字也放不下、在里面滚：底边淡出一小段，提示下面还有。 */
+.bravais-seam-home-nav.is-overflowing { mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); }
+.bravais-seam-home-nav.is-overflowing > .bravais-seam-home-nav-content { padding-bottom: 16px; }
+
+.bravais-seam-home-nav::-webkit-scrollbar { display: none; }
+
+.bravais-seam-home-nav-content {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* fb3：中段撑满剩余空间、内容竖直居中。上内边距 = 段间距（导航区与工具格之间也是这么宽），所以内容到页签、到工具格
+   的留白相等；useBravaisSeamTabsFit 把它算进所需高度。 */
+.bravais-seam-home-middle {
+    display: flex;
+    width: 100%;
+    flex: 1 0 auto;
+    flex-direction: column;
+    justify-content: center;
+    padding: var(--bravais-home-gap, 18px) 0 0;
+}
+
+.bravais-seam-home-body {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+/* 切换位：二级切换，下面隔一道分隔线是直达入口（特殊集合）；竖着排、居中。测量副本里也是这一身（不限在 body 里）。 */
+.bravais-seam-home .bravais-seam-sections-slot { display: flex; width: 100%; flex-direction: column; align-items: center; }
+
+/* fb2 第二轮：页头竖着排——最上面一行是「书库」小字（横排），下面是折叠按钮，再下面是页签那一列（第三轮：折叠按钮
+   单独一行，不与第一个页签并排；窄缝与书脊一样）。空间不够时先把标题视觉隐藏（.is-hidden，读屏仍读得到；折叠按钮
+   那一行不隐藏），再缩页签。 */
+.bravais-seam-home-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.bravais-seam-home-title {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.3;
+    letter-spacing: 0.3em;
+    text-align: center;
+    text-indent: 0.3em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bravais-seam-home.is-compact .bravais-seam-home-title { font-size: 12px; letter-spacing: 0.08em; text-indent: 0.08em; }
+
+.bravais-seam-home-title.is-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* 折叠按钮单独一行，在页签那一列上面（窄缝与书脊相同）。 */
+.bravais-seam-home-side { display: flex; flex: none; flex-direction: column; align-items: center; gap: 8px; }
+
+/* 全名页头的测量副本：与导航区同宽，绝对定位、看不见、不占位。 */
+.bravais-seam-home > .bravais-seam-home-measure {
+    position: absolute;
+    top: 0;
+    right: var(--bravais-home-pad-x);
+    left: var(--bravais-home-pad-x);
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.bravais-seam-home .bravais-seam-tabs { flex-direction: column; flex-wrap: nowrap; align-items: center; gap: 4px; }
+
+.bravais-seam-home .bravais-seam-home-tab {
+    display: block;
+    padding: 9px 4px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: 0.18em;
+    white-space: nowrap;
+    background: none;
+    writing-mode: vertical-rl;
+}
+
+.bravais-seam-home.is-compact .bravais-seam-tabs .bravais-seam-home-tab { padding: 7px 3px; font-size: 12px; letter-spacing: 0.1em; }
+.bravais-seam-home .bravais-seam-tabs.is-short { gap: 2px; }
+.bravais-seam-home .bravais-seam-tabs.is-short .bravais-seam-home-tab { padding: 5px 4px; letter-spacing: 0; text-orientation: upright; }
+/* 选中的填色块画在 ::before 上，换页签时旧的淡出、新的淡入（只动 opacity；页签列本身不翻，见设计稿 §7「缝内的过渡」）。 */
+.bravais-seam-home .bravais-seam-tabs .bravais-seam-home-tab { position: relative; isolation: isolate; }
+.bravais-seam-home .bravais-seam-tabs .bravais-seam-home-tab::before {
+    position: absolute;
+    z-index: -1;
+    inset: -1px;
+    border-radius: inherit;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    content: '';
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+}
+.bravais-seam-home .bravais-seam-tabs .bravais-seam-home-tab.is-active { color: var(--text-primary, #f7f4ee); background: none; }
+.bravais-seam-home .bravais-seam-tabs .bravais-seam-home-tab.is-active::before { opacity: 1; }
+.bravais-seam-home .bravais-seam-tabs .bravais-seam-home-tab:disabled { opacity: 0.35; cursor: default; }
+
+/* 二级切换（本地四行 / Navidrome 的 section）。fb3：纵向一项一行，激活项是图标 + 竖排文字（与页签同一套竖排），
+   其余只有图标。与页签区分：页签的选中是填色的块，这里是强调色 + 左侧一道细线；字号也小一级。short 时激活项的文字
+   与页签一起缩成一个字。 */
+.bravais-seam-sections {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.bravais-seam-home .bravais-seam-section {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px;
+    border: 0;
+    border-radius: 10px;
+    color: var(--bravais-seam-ink-soft);
+    background: none;
+    cursor: pointer;
+}
+
+.bravais-seam-home span.bravais-seam-section { cursor: default; }
+.bravais-seam-home .bravais-seam-section svg { width: 16px; height: 16px; flex: none; }
+
+.bravais-seam-home .bravais-seam-section .is-label {
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: 0.14em;
+    white-space: nowrap;
+    writing-mode: vertical-rl;
+}
+
+.bravais-seam-home .bravais-seam-sections.is-short .bravais-seam-section .is-label { letter-spacing: 0; text-orientation: upright; }
+.bravais-seam-home button.bravais-seam-section:hover { color: var(--text-primary, #f7f4ee); background: color-mix(in srgb, currentColor 8%, transparent); }
+.bravais-seam-home .bravais-seam-section.is-active { color: var(--text-accent, var(--text-primary, #f7f4ee)); }
+
+.bravais-seam-home .bravais-seam-section.is-active::before {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 0;
+    width: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    content: '';
+    animation: bravais-seam-section-rule-in 240ms cubic-bezier(.2, .7, .25, 1);
+}
+
+/* 换激活项：侧边细线从中间长出来（只动 transform）；降低动效时只淡入。 */
+@keyframes bravais-seam-section-rule-in { from { transform: scaleY(0); } }
+:root:is([data-reduce-motion~='lattice'], [data-reduce-motion~='collectionMorph']) .bravais-seam-home .bravais-seam-section.is-active::before {
+    animation: bravais-seam-fade-in 180ms ease-out;
+}
+
+.bravais-seam-home.is-compact .bravais-seam-section { padding: 7px 6px; }
+.bravais-seam-home.is-compact .bravais-seam-section .is-label { font-size: 11px; letter-spacing: 0.08em; }
+
+/* 管理隐藏视图：标题 +「只看隐藏」开关 +「完成」。 */
+.bravais-seam-manage {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 8px 4px;
+    border-radius: 12px;
+    color: var(--text-accent, currentColor);
+    font-size: 11px;
+    font-weight: 800;
+    text-align: center;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.bravais-seam .bravais-seam-manage button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 5px 4px;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 9px;
+    color: var(--text-primary, #f7f4ee);
+    font-size: 11px;
+    font-weight: 700;
+    background: none;
+    cursor: pointer;
+}
+
+.bravais-seam .bravais-seam-manage button.is-active { background: color-mix(in srgb, currentColor 16%, transparent); }
+.bravais-seam-manage svg { width: 12px; height: 12px; }
+
+.bravais-seam-scan {
+    width: 100%;
+    overflow: hidden;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
+    text-overflow: ellipsis;
+}
+
+.bravais-seam-home.is-compact .bravais-seam-scan { display: none; }
+
+/* B10 账户位：B9 只占位（空容器不占高度）。~~fb3：在中段里，与二级切换同一个竖直居中的区域；列表展开后变高，
+   页头随之按测量退让。~~
+   fb4：账户位是首页窄缝的直接子级，排在导航区与工具格之间、贴着工具格（与工具格之间只留 8px，书脊上 6px，
+   负的下外边距抵掉一部分段间距）。平台列表从它往上弹出（绝对定位，见 bravaisAccount.css），盖在导航区上、
+   层级高于导航区，不改变任何一段的高度。 */
+.bravais-seam-account { width: 100%; }
+.bravais-seam-account:empty { display: none; }
+
+.bravais-seam-home > .bravais-seam-account {
+    position: relative;
+    z-index: 3;
+    margin-bottom: calc(8px - var(--bravais-home-gap, 18px));
+}
+
+.bravais-seam-home.is-compact > .bravais-seam-account { margin-bottom: calc(6px - var(--bravais-home-gap, 12px)); }
+.bravais-seam-home-body > .bravais-seam-vstatus { max-height: none; }
+
+/* 工具按钮：三列一格格（书脊上一列）。
+   fb2：两列 40px、间距 8px（书脊上一列 36px），只放常驻的几个；次要的在「⋯」里，菜单从工具格上方弹出。
+   fb3：固定四格（搜索、设置、队列、「⋯」），窄缝里排成 2×2，书脊上一列。 */
+.bravais-seam-dock { position: relative; display: flex; width: 100%; flex-direction: column; align-items: center; }
+
+.bravais-seam-tools {
+    display: grid;
+    grid-template-columns: repeat(2, 40px);
+    justify-content: center;
+    gap: 8px;
+}
+
+.bravais-seam-home.is-compact .bravais-seam-tools { grid-template-columns: 36px; gap: 6px; }
+.bravais-seam-tools .bravais-seam-icon { width: 40px; height: 40px; border-radius: 12px; }
+.bravais-seam-tools .bravais-seam-icon svg { width: 18px; height: 18px; }
+.bravais-seam-home.is-compact .bravais-seam-tools .bravais-seam-icon { width: 36px; height: 36px; }
+.bravais-seam-tools .bravais-seam-icon:disabled { opacity: 0.3; cursor: default; }
+.bravais-seam-tools .bravais-seam-icon.is-pressed { color: var(--text-accent, currentColor); background: color-mix(in srgb, currentColor 16%, transparent); }
+/* fb11：舞台开着时舞台入口单独占最上面一整行（宽同两格，图标 + 短名）；书脊上一列，它是最上面的一个图标。 */
+.bravais-seam-tools .bravais-seam-icon.is-wide {
+    display: inline-flex;
+    width: auto;
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 4px;
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.bravais-seam-tools .bravais-seam-icon.is-wide svg { width: 16px; height: 16px; flex: none; }
+.bravais-seam-tools .bravais-seam-icon.is-wide .is-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.bravais-seam-home.is-compact .bravais-seam-tools .bravais-seam-icon.is-wide { width: 36px; padding: 0; }
+
+/* fb8（用户实测：菜单像是透明的，后面的账户入口透出来、字叠在一起）：根因是层级——fb4 起账户位 position: relative +
+   z-index: 3，工具格没有层级，菜单的 z-index 只在窄缝这一层里和账户位比，被账户入口盖住（菜单底色本身一直不透明，
+   fb5b 的 motion.div 没有丢掉它）。工具格抬到账户位之上（只在窄缝里，书脊上没有菜单）。
+   菜单两侧比工具格各宽 6px（与账户的平台列表一样，仍在缝里），项靠左、一行一个，常见的中文项不折行；底色、阴影、
+   圆角与平台列表一致。 */
+.bravais-seam-home > .bravais-seam-dock { z-index: 4; }
+
+.bravais-seam-menu.is-home {
+    position: absolute;
+    right: -6px;
+    bottom: calc(100% + 8px);
+    left: -6px;
+    z-index: 2;
+    box-sizing: border-box;
+    padding: 4px;
+    border-radius: 12px;
+    color: var(--text-primary, #f7f4ee);
+    background: color-mix(in srgb, var(--bg-color, #070707) 92%, var(--text-primary, #f7f4ee));
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent), 0 12px 32px rgb(0 0 0 / 34%);
+}
+
+.bravais-seam .bravais-seam-menu.is-home button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 7px 6px;
+    border-radius: 9px;
+    font-size: 12px;
+    line-height: 1.25;
+    text-align: left;
+}
+
+.bravais-seam-menu.is-home button svg { width: 14px; height: 14px; flex: none; opacity: 0.75; }
+.bravais-seam-menu.is-home button.is-pressed { color: var(--text-accent, currentColor); background: color-mix(in srgb, currentColor 12%, transparent); }
+.bravais-seam-menu-rule { height: 1px; margin: 3px 6px; background: color-mix(in srgb, currentColor 14%, transparent); }
+
+/* ---------- 全局搜索框 ---------- */
+
+.bravais-seam-search {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: 16px;
+    padding: 22px 22px 0;
+    box-sizing: border-box;
+}
+
+/* 搜索在线平台：带框的输入框（放大镜 + 「搜索在线平台」 + 「搜索」按钮），与当前页过滤的下划线输入位明确区分。 */
+.bravais-search-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 6px 0 12px;
+    border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, currentColor 5%, transparent);
+    transition: border-color 180ms ease;
+}
+
+.bravais-search-form:focus-within { border-color: var(--text-accent, currentColor); }
+.bravais-search-form > svg { width: 16px; height: 16px; flex: none; opacity: 0.7; }
+.bravais-search-hint { margin: -6px 0 0; color: var(--bravais-seam-ink-soft); font-size: 12px; line-height: 1.45; }
+
+.bravais-search-form input {
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 12px 0;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    font-size: 16px;
+    background: none;
+    outline: none;
+}
+
+.bravais-search-form input::-webkit-search-cancel-button { display: none; }
+
+/* ---------- 目录树面板 ---------- */
+
+.bravais-seam .bravais-dir-select {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    background: none;
+    cursor: pointer;
+}
+
+.bravais-seam .bravais-dir-select:disabled { cursor: default; }
+.bravais-seam .bravais-dir-select.is-all { flex: none; min-height: 36px; padding: 0 2px; font-size: 12px; }
+
+.bravais-dir-check {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 6px;
+}
+
+.bravais-dir-check svg { width: 12px; height: 12px; stroke-width: 3; }
+.bravais-dir-check.is-all { border-color: var(--text-primary, #fff); color: var(--bg-color, #070707); background: var(--text-primary, #fff); }
+.bravais-dir-check.is-partial,
+.bravais-dir-check.is-direct { border-color: var(--text-accent, currentColor); color: var(--text-accent, currentColor); background: color-mix(in srgb, var(--text-accent, currentColor) 20%, transparent); }
+.bravais-dir-select:disabled .bravais-dir-check { opacity: 0.25; }
+
+.bravais-dir-text { display: flex; min-width: 0; flex-direction: column; }
+.bravais-dir-text strong,
+.bravais-dir-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bravais-dir-text strong { font-size: 13px; font-weight: 700; }
+.bravais-dir-text small { color: var(--bravais-seam-ink-soft); font-size: 11px; }
+
+.bravais-dir-row {
+    display: flex;
+    box-sizing: border-box;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border-radius: 10px;
+}
+
+.bravais-dir-row:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.bravais-dir-row.is-ignored .bravais-dir-text strong { text-decoration: line-through; opacity: 0.45; }
+
+.bravais-seam .bravais-dir-toggle {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: none;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    opacity: 0.55;
+    cursor: pointer;
+}
+
+.bravais-dir-toggle:disabled { cursor: default; }
+.bravais-dir-toggle svg { width: 14px; height: 14px; }
+
+/* 根节点行的悬停操作：重新扫描、移除根；被忽略的文件夹：恢复。 */
+.bravais-dir-ops { display: flex; flex: none; gap: 2px; opacity: 0; transition: opacity 120ms ease; }
+.bravais-dir-row:hover .bravais-dir-ops,
+.bravais-dir-row:focus-within .bravais-dir-ops { opacity: 1; }
+.bravais-dir-ops .bravais-seam-icon { width: 28px; height: 28px; border-radius: 9px; }
+.bravais-dir-ops .bravais-seam-icon svg { width: 14px; height: 14px; }
+.bravais-dir-ops .bravais-seam-icon.is-danger { color: color-mix(in srgb, #f87171 80%, var(--text-primary, #fff)); }
+.bravais-dir-ops .bravais-seam-icon:disabled { opacity: 0.3; cursor: default; }
+
+.bravais-seam-actions.is-directory .bravais-chrome-button.is-danger { color: color-mix(in srgb, #f87171 80%, var(--text-primary, #fff)); }
+.bravais-dir-form .bravais-seam-form { padding: 0 0 4px; }
+
+/* ---------- 首页磁贴：眼睛按钮、批量选中的勾、灰度 + 半透明 ---------- */
+
+.bravais-tile-eye {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    color: #fff;
+    background: rgb(0 0 0 / 45%);
+    cursor: pointer;
+    transition: background-color 140ms ease;
+}
+
+/* 眼睛按钮只在「管理隐藏」模式里出现（实测反馈：平时悬停不该冒出隐藏按钮）；平时不渲染也不进焦点序列。 */
+.bravais-root:not(.is-managing-hidden) .bravais-tile-eye { display: none; }
+.bravais-tile-eye svg { width: 16px; height: 16px; }
+.bravais-tile-eye:hover { background: rgb(0 0 0 / 70%); }
+.bravais-tile-eye.is-hidden { color: var(--text-accent, #fff); }
+
+.bravais-tile-check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    border-radius: 999px;
+    color: var(--bg-color, #070707);
+    background: var(--text-primary, #fff);
+    pointer-events: none;
+}
+
+.bravais-tile-check svg { width: 15px; height: 15px; stroke-width: 3; }
+
+/* 灰度 + 半透明（GridMap 批量模式的未选中、隐藏编辑模式的已隐藏），原地变色不重排。 */
+.lattice-poster.bravais-tile-face.is-dimmed:not(.is-expanded) {
+    filter: grayscale(1);
+    opacity: 0.35;
+    transition: filter 200ms ease, opacity 200ms ease;
+}
+
+/* 批量选中：与键盘焦点同一道环（设计稿 §7.5「列表联动、批量选中 = Lattice 键盘聚焦环」），不染色。 */
+.bravais-tile > .lattice-poster.bravais-tile-face.is-selected:not(.is-focused) {
+    box-shadow:
+        0 0 0 1px rgb(0 0 0 / 62%),
+        0 0 0 4px var(--text-primary, #fff),
+        0 0 0 5px rgb(0 0 0 / 38%);
+}
+
+.lattice-root.is-daylight .bravais-tile > .lattice-poster.bravais-tile-face.is-selected:not(.is-focused) {
+    box-shadow:
+        0 0 0 1px rgb(255 255 255 / 78%),
+        0 0 0 4px var(--text-primary, #111),
+        0 0 0 5px rgb(255 255 255 / 45%);
+}
+
+.bravais-tile > .lattice-poster.bravais-tile-face.is-selected .lattice-poster-tint { opacity: 0; }
+
+:root[data-reduce-motion~='lattice'] .lattice-poster.bravais-tile-face.is-dimmed,
+:root[data-reduce-motion~='lattice'] .bravais-tile-eye { transition: none; }
+
+/* 当前页过滤（设计稿 §7.6）：正在输入或有过滤词时，输入位排在导航区与账户入口之间（自然高度）。 */
+.bravais-seam-home > .bravais-seam-home-filter { width: 100%; margin-bottom: calc(10px - var(--bravais-home-gap, 18px)); }
+
+/* ---------- 特殊集合：磁贴的类型标签与缝里的直达入口 ---------- */
+
+/* 特殊集合（我喜欢的音乐、私人 FM、全部歌曲…）的类型标签：强调色底、底色字，前面一个小图标（与直达入口同一个）。
+   底色字与强调色的对比就是主题本身「强调色写在底色上」的对比，日光 / 暗色都成立；一圈 shade 发丝线让它在同色系封面上
+   也分得开。层级与普通标签相同（在叠色层 3、熄灯层 5 之下）：2026-10-09 起叠色与熄灯一律盖住集合的标记（叠页边同理，
+   用户要求），它不再抬到叠色之上；全透明档沿用标签的 0.28 压暗规则（bravaisAppearance.css）。标签带曲目数
+   （「歌单 · 321」，投影时写好）。正在播放的卡不再换成 shade 底（强调色已经在了；正在播放的卡本来就不染、不熄）。 */
+.bravais-tile-face > .lattice-poster-badge.is-special {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--bg-color, #070707);
+    background: var(--text-accent, var(--text-primary, #f7f4ee));
+    box-shadow: 0 0 0 1px rgb(var(--lattice-shade-rgb) / 34%);
+}
+
+.lattice-poster-badge.is-special > .bravais-badge-icon { width: 12px; height: 12px; flex: none; stroke-width: 2.6; }
+
+/* 直达入口（fb11，用户实测：只有图标和窄缝其它部分不统一、孤零零浮在中段）：
+   - 位置：中段的第二块（.bravais-seam-home-jumps），贴在中段底部；中段内层（二级切换、扫描进度、状态）用上下自动外边距
+     在剩下的空间里居中。入口一块的上内边距等于段间距（与中段的上内边距相同），所以中段内层到页签、到入口的留白相等；有二级切换时再加一道短分隔线。
+   - 样子：横排文字（用户定，2026-10-09：竖排并排两列读起来别扭），一行一个、上下排列、居中；窄缝里放不下时折成两行。
+     与激活的二级切换区分：小一号（11px，书脊 10px）、字重常规、副文色、没有侧边细线——是一组普通按钮，不是又一组页签。
+     悬停与二级切换同一种浅底 + 字变深，键盘焦点用缝里按钮共用的 focus-visible 环；静止时无框（fb9/fb10a 去掉了描边）。
+   - 长名字：最多两行，再长截断（-webkit-line-clamp）。 */
+.bravais-seam-home .bravais-seam-home-body { margin-block: auto; }
+
+.bravais-seam-home-jumps { display: flex; width: 100%; flex: none; flex-direction: column; align-items: center; }
+
+/* 上内边距 = 段间距：中段内层到页签、到入口的留白相等（中段的上内边距也是它），书脊上是 12px。 */
+.bravais-seam-shortcuts-wrap { display: flex; flex-direction: column; align-items: center; padding-top: var(--bravais-home-gap, 18px); }
+
+.bravais-seam-shortcuts-rule {
+    display: block;
+    width: 18px;
+    height: 1px;
+    margin: 0 0 10px;
+    background: color-mix(in srgb, var(--text-primary, #f7f4ee) 22%, transparent);
+}
+
+.bravais-seam-shortcuts { display: flex; width: 100%; flex-direction: column; align-items: stretch; gap: 2px; }
+
+.bravais-seam-home .bravais-seam-shortcut {
+    display: block;
+    padding: 6px 6px;
+    border: 0;
+    border-radius: 10px;
+    color: var(--bravais-seam-ink-soft);
+    background: none;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+}
+
+.bravais-seam-home .bravais-seam-shortcut .is-label {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: center;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.bravais-seam-home span.bravais-seam-shortcut { cursor: default; }
+.bravais-seam-home button.bravais-seam-shortcut:hover { color: var(--text-primary, #f7f4ee); background: color-mix(in srgb, currentColor 8%, transparent); }
+
+.bravais-seam-home.is-compact .bravais-seam-shortcut { padding: 5px 2px; }
+.bravais-seam-home.is-compact .bravais-seam-shortcut .is-label { font-size: 10px; }
+.bravais-seam-home.is-compact .bravais-seam-shortcuts { gap: 0; }
+.bravais-seam-home.is-compact .bravais-seam-shortcuts-rule { margin-bottom: 8px; }
+
+/* 放不下时挪进「⋯」菜单：图标同样用强调色。 */
+.bravais-seam-menu.is-home button.is-shortcut svg { color: var(--text-accent, currentColor); opacity: 1; }
+
+:root[data-reduce-motion~='lattice'] .bravais-seam-home .bravais-seam-shortcut { transition: none; }

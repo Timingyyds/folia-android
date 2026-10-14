@@ -1,0 +1,358 @@
+/* src/ui/wall/WallToolsQueueIsland.css — 墙面工具面板上方的队列浮岛（WallToolsQueueIsland），Lattice 与 bravais 共用。
+   与面板同一种玻璃（圆角 20px），宽度与面板相同（--wall-tools-panel-width），两块玻璃左右对齐。
+   高度由组件按行数给（上下边框 2px + 头部 36px + 最多 8 行 × 40px，至少 112px）；窗口矮时 .lattice-tools-stack 的 max-height
+   只压缩浮岛（flex-shrink），面板不变。日光档在 .lattice-tools.is-daylight 下覆盖。
+   次要文字用 opacity 而不是 color-mix(currentColor)：实测 Chromium 里继承色变了（切日光）之后 color-mix 不跟着重算，
+   要等下一次布局才对。 */
+
+.lattice-tools-island {
+    display: flex;
+    width: var(--wall-tools-panel-width);
+    min-height: 112px;
+    flex: 0 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 8%);
+    border-radius: 20px;
+    background: rgb(0 0 0 / 40%);
+    box-shadow: 0 24px 64px rgb(0 0 0 / 42%);
+    backdrop-filter: blur(24px);
+}
+
+.lattice-tools.is-daylight .lattice-tools-island {
+    border-color: rgb(0 0 0 / 7%);
+    background: rgb(255 255 255 / 62%);
+    box-shadow: 0 24px 64px rgb(42 35 27 / 18%);
+}
+
+/* —— 头部：标题、只读锁、存为歌单、清空（两步确认时变成带字的强调色胶囊）—— */
+
+.lattice-tools-island-header {
+    display: flex;
+    height: 36px;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px 0 14px;
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.lattice-tools.is-daylight .lattice-tools-island-header { border-bottom-color: rgb(0 0 0 / 7%); }
+
+.lattice-tools-island-heading {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 650;
+    opacity: 0.72;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lattice-tools-island-input {
+    min-width: 0;
+    height: 26px;
+    flex: 1 1 auto;
+    margin-left: -6px;
+    padding: 0 8px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 8px;
+    background: rgb(255 255 255 / 6%);
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+}
+
+.lattice-tools.is-daylight .lattice-tools-island-input { border-color: rgb(0 0 0 / 16%); background: rgb(0 0 0 / 4%); }
+.lattice-tools-island-input::placeholder { color: inherit; opacity: 0.45; }
+
+.lattice-tools-island-input:focus-visible {
+    outline: 2px solid var(--text-accent, currentColor);
+    outline-offset: 1px;
+}
+
+.lattice-tools-island-note {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    place-items: center;
+    opacity: 0.55;
+}
+
+.lattice-tools-island-note svg { width: 14px; height: 14px; }
+
+.lattice-tools-island-header-action {
+    display: inline-flex;
+    min-width: 28px;
+    height: 28px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+    opacity: 0.72;
+    transition: background-color 160ms ease, opacity 160ms ease, color 160ms ease;
+}
+
+.lattice-tools-island-header-action:hover,
+.lattice-tools-island-header-action:focus-visible {
+    background: rgb(255 255 255 / 10%);
+    opacity: 1;
+}
+
+.lattice-tools.is-daylight .lattice-tools-island-header-action:hover,
+.lattice-tools.is-daylight .lattice-tools-island-header-action:focus-visible { background: rgb(0 0 0 / 7%); }
+
+.lattice-tools-island-header-action svg { width: 15px; height: 15px; flex: none; }
+
+/* 清空待确认：强调色底，带「再点一次清空」。前景读 --text-on-accent（底色与正文色里对强调色对比更高的那个；
+   缺省暗色主题强调色就是正文色，用正文色会白底白字），没有这个变量时退回底色。 */
+.lattice-tools-island-header-action.is-confirming,
+.lattice-tools.is-daylight .lattice-tools-island-header-action.is-confirming {
+    max-width: 70%;
+    background: var(--text-accent, currentColor);
+    color: var(--text-on-accent, var(--bg-color, #09090b));
+    opacity: 1;
+}
+
+.lattice-tools-island-header-action.is-confirming span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* —— 列表：react-window 的滚动根填满剩下的高度；拖拽时幽灵行叠在上面 —— */
+
+.lattice-tools-island-list {
+    position: relative;
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0 4px;
+}
+
+.lattice-tools-island-list.is-dragging { cursor: grabbing; }
+
+.lattice-tools-island-scroll {
+    overscroll-behavior: contain;
+}
+
+.lattice-tools-island-empty {
+    display: grid;
+    flex: 1 1 auto;
+    place-items: center;
+    margin: 0;
+    font-size: 12px;
+    opacity: 0.45;
+}
+
+/* —— 一行（40px）：手柄、主按钮（标记 + 标题 + 歌手）、悬停 / 聚焦时的三个动作 —— */
+
+.lattice-tools-island-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 2px 4px 2px 0;
+    border-radius: 10px;
+}
+
+.lattice-tools-island-row:hover,
+.lattice-tools-island-row:focus-within { background: rgb(255 255 255 / 7%); }
+
+.lattice-tools.is-daylight .lattice-tools-island-row:hover,
+.lattice-tools.is-daylight .lattice-tools-island-row:focus-within { background: rgb(0 0 0 / 5%); }
+
+.lattice-tools-island-row.is-current { background: rgb(255 255 255 / 10%); }
+.lattice-tools.is-daylight .lattice-tools-island-row.is-current { background: rgb(0 0 0 / 7%); }
+
+/* 拖拽中：其余行带过渡让开，悬停底与动作都收起；被拖的那一行由幽灵行代替。 */
+.lattice-tools-island-row.is-dragging { transition: transform 140ms ease; }
+
+.lattice-tools-island-row.is-dragging:hover,
+.lattice-tools-island-row.is-dragging:focus-within { background: transparent; }
+
+.lattice-tools-island-row.is-dragging.is-current { background: rgb(255 255 255 / 10%); }
+.lattice-tools.is-daylight .lattice-tools-island-row.is-dragging.is-current { background: rgb(0 0 0 / 7%); }
+.lattice-tools-island-row.is-drag-source { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+    .lattice-tools-island-row.is-dragging { transition: none; }
+}
+
+.lattice-tools-island-handle {
+    display: grid;
+    width: 18px;
+    height: 32px;
+    flex: none;
+    place-items: center;
+    color: inherit;
+    cursor: grab;
+    opacity: 0;
+    touch-action: none;
+    transition: opacity 120ms ease;
+}
+
+.lattice-tools-island-handle svg { width: 13px; height: 13px; }
+
+.lattice-tools-island-row:hover .lattice-tools-island-handle,
+.lattice-tools-island-row:focus-within .lattice-tools-island-handle { opacity: 0.5; }
+.lattice-tools-island-row .lattice-tools-island-handle:hover { opacity: 0.9; }
+
+/* 触屏没有悬停：手柄一直淡淡地在。 */
+@media (hover: none) {
+    .lattice-tools-island-handle { opacity: 0.4; }
+}
+
+/* 只读（外部舞台播放）：没有手柄，主按钮往右让出同样的位置。 */
+.lattice-tools-island[data-queue-readonly] .lattice-tools-island-row { padding-left: 6px; }
+
+.lattice-tools-island-song {
+    display: flex;
+    min-width: 0;
+    height: 36px;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    padding: 0 6px 0 2px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.lattice-tools-island-song:focus-visible {
+    outline: 2px solid var(--text-accent, currentColor);
+    outline-offset: -2px;
+}
+
+.lattice-tools-island-marker {
+    width: 3px;
+    height: 18px;
+    flex: none;
+    border-radius: 2px;
+    background: transparent;
+}
+
+.lattice-tools-island-row.is-current .lattice-tools-island-marker { background: var(--text-accent, currentColor); }
+
+.lattice-tools-island-text {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.lattice-tools-island-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.lattice-tools-island-name,
+.lattice-tools-island-artist {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lattice-tools-island-name { font-size: 12.5px; font-weight: 550; }
+.lattice-tools-island-row.is-current .lattice-tools-island-name { font-weight: 700; }
+
+.lattice-tools-island-artist {
+    font-size: 10.5px;
+    opacity: 0.52;
+}
+
+.lattice-tools-island-tag {
+    flex: none;
+    padding: 0 6px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    opacity: 0.6;
+    font-size: 9.5px;
+    font-weight: 600;
+    line-height: 15px;
+}
+
+.lattice-tools-island-row.is-unavailable .lattice-tools-island-text { opacity: 0.55; }
+
+.lattice-tools-island-row-actions {
+    display: none;
+    flex: none;
+    align-items: center;
+}
+
+.lattice-tools-island-row:hover .lattice-tools-island-row-actions,
+.lattice-tools-island-row:focus-within .lattice-tools-island-row-actions { display: flex; }
+
+.lattice-tools-island-row.is-dragging .lattice-tools-island-row-actions { display: none; }
+
+.lattice-tools-island-row-action {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: background-color 140ms ease, opacity 140ms ease;
+}
+
+.lattice-tools-island-row-action:hover,
+.lattice-tools-island-row-action:focus-visible {
+    background: rgb(255 255 255 / 12%);
+    opacity: 1;
+}
+
+.lattice-tools.is-daylight .lattice-tools-island-row-action:hover,
+.lattice-tools.is-daylight .lattice-tools-island-row-action:focus-visible { background: rgb(0 0 0 / 8%); }
+
+.lattice-tools-island-row-action svg { width: 14px; height: 14px; }
+
+/* —— 幽灵行：跟着指针走（位置由 useQueueDragReorder 直接写 transform）—— */
+
+.lattice-tools-island-ghost {
+    position: absolute;
+    top: 0;
+    right: 4px;
+    left: 4px;
+    z-index: 2;
+    display: flex;
+    height: 40px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px 0 3px;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 18%);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 38%), 0 0 0 1px rgb(255 255 255 / 12%);
+    pointer-events: none;
+    will-change: transform;
+}
+
+.lattice-tools.is-daylight .lattice-tools-island-ghost {
+    background: rgb(255 255 255 / 92%);
+    box-shadow: 0 10px 28px rgb(42 35 27 / 20%), 0 0 0 1px rgb(0 0 0 / 8%);
+}
+
+.lattice-tools-island-ghost > svg { width: 13px; height: 13px; flex: none; opacity: 0.6; }
+

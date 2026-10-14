@@ -1,0 +1,84 @@
+/* Scoped poster-wall styling; nothing here leaks into the existing Grid surfaces. */
+/* Lattice-only rules. The wall surface, the poster states and the derived `--lattice-*` tokens they read
+   live in ui/wall/wall.css, which Lattice.tsx imports right before this file. */
+
+.lattice-root {
+    --lattice-chrome-shadow: rgb(0 0 0 / 55%);
+}
+
+.lattice-root.is-daylight {
+    --lattice-chrome-shadow: rgb(255 255 255 / 55%);
+}
+
+/* Poster content stays square, while independent navigation and utility chrome keeps its shape. */
+/* 限定在 Lattice 自己的根（.lattice-queue-root，与 .lattice-root 挂在同一个元素上，特异度不变）：wall.css 让 bravais
+   也用 .lattice-root，Lattice 的 chunk 一旦加载，这条 !important 会把 bravais 缝里的圆角按钮压成直角（B4 记下的泄漏）。 */
+.lattice-queue-root *:not(.lattice-tools *):not(.lattice-back):not(.lattice-chrome button) {
+    border-radius: 0 !important;
+}
+
+/* 熄灯（.lattice-poster-lights-out 与 is-lights-out）在 ui/wall/wall.css（实测反馈 1：资料库墙也跟随灯光设置）。 */
+
+.lattice-poster.is-expanded .lattice-poster-copy {
+    right: 32px;
+    bottom: 152px;
+    left: 32px;
+}
+
+.lattice-poster-controls {
+    position: absolute;
+    right: 24px;
+    bottom: 28px;
+    left: 32px;
+    z-index: 2;
+}
+
+/* .lattice-back（左上角返回）在 ui/wall/WallBackButton.css（实测反馈 1：bravais 也用同一个按钮）。 */
+
+.lattice-empty {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 9px;
+    pointer-events: none;
+}
+
+.lattice-empty strong { font-size: 17px; letter-spacing: 0.16em; }
+.lattice-empty span { font-size: 12px; opacity: 0.5; }
+
+/* ---------- 翻牌交接（资料库墙 ↔ Lattice，设计稿 §7「进入队列」；属性由 Lattice.tsx 按 useWallHandoffStore 挂） ----------
+   一律限定在 Lattice 自己的根类（.lattice-queue-root）：bravais 的根节点同样是 .lattice-root，也挂 data-wall-handoff。 */
+
+/* 叠在资料库墙上面时墙面底色不画：下面那面墙画的是同一份底色与光晕（透光档下是它的实色 veil）。 */
+.lattice-queue-root.is-handoff-surface-off { background: transparent; }
+
+/* 颗粒与暗角两面墙只留一份（叠着画两遍边缘会压暗两遍）。切换是瞬间的：两份是同一套设置。 */
+.lattice-queue-root[data-wall-handoff-vignette='off']::before,
+.lattice-queue-root[data-wall-handoff-grain='off']::after { opacity: 0; }
+
+/* 下面是透光档（没有颗粒）时：颗粒随交接淡入 / 淡出，不在某一帧整片出现或消失。 */
+.lattice-queue-root[data-wall-handoff-see-through]::after { transition: opacity 300ms ease; }
+
+/* 进来：常驻的返回按钮等开翻后淡入（资料库墙那颗是隐藏式的，交接期间收着）。离开：开翻时淡出。 */
+.lattice-queue-root[data-wall-handoff='in'][data-wall-handoff-mode='flip'] .lattice-back { opacity: 0; }
+.lattice-queue-root[data-wall-handoff='in'][data-wall-handoff-mode='flip'][data-wall-handoff-phase='flipping'] .lattice-back {
+    opacity: 1;
+    transition: opacity 260ms ease 220ms;
+}
+.lattice-queue-root[data-wall-handoff='out'][data-wall-handoff-mode='flip']:not([data-wall-handoff-phase='waiting']) .lattice-back {
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+/* 空队列的提示：与返回按钮同一拍出现 / 消失。 */
+.lattice-queue-root[data-wall-handoff='in'][data-wall-handoff-mode='flip'] .lattice-empty { opacity: 0; }
+.lattice-queue-root[data-wall-handoff='in'][data-wall-handoff-mode='flip'][data-wall-handoff-phase='flipping'] .lattice-empty {
+    opacity: 1;
+    transition: opacity 260ms ease 220ms;
+}
+
+:root[data-reduce-motion~='lattice'] .lattice-queue-root[data-wall-handoff] .lattice-back,
+:root[data-reduce-motion~='lattice'] .lattice-queue-root[data-wall-handoff] .lattice-empty { transition: none; }

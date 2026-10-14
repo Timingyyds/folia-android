@@ -1,0 +1,558 @@
+/* src/library/suites/bravais/bravais.css — bravais 专属的样式：磁贴的外框 / 内容层、聚焦卡的文字区与按钮、缝与边缘标签。
+   墙面、海报各状态、--lattice-* 派生量与日光切换都来自共享的 ui/wall/wall.css（类名保留 lattice- 前缀，
+   设计稿 §7.5）。按钮的悬停框照 LatticeChrome 的视觉另写一份（bravais-chrome-button）：Lattice 的 .lattice-chrome
+   绑着播放控件的 44 / 86px 方格与 !important 圆角，不适合文字按钮，也不该让 bravais 依赖 Lattice 的 chunk。
+   缝与按钮的圆角能保留，是因为 Lattice.css 的「除控件外一律方角」规则已限定到 Lattice 专属的根类（.lattice-queue-root）。 */
+
+.bravais-root {
+    --bravais-seam-paper: color-mix(in srgb, var(--bg-color, #070707) 90%, var(--text-primary, #f7f4ee));
+    --bravais-seam-ink-soft: color-mix(in srgb, var(--text-primary, #f7f4ee) 55%, transparent);
+    --bravais-chrome-shadow: rgb(0 0 0 / 55%);
+    --bravais-seam-shadow: 0 0 0 1px color-mix(in srgb, var(--text-primary, #fff) 6%, transparent), 0 24px 64px rgb(0 0 0 / 42%);
+}
+
+.bravais-root.is-daylight {
+    --bravais-chrome-shadow: rgb(255 255 255 / 55%);
+    --bravais-seam-shadow: 0 0 0 1px color-mix(in srgb, var(--text-primary, #111) 8%, transparent), 0 24px 64px rgb(42 35 27 / 18%);
+}
+
+/* ---------- 磁贴：外框只管位置，内容层（.lattice-poster）是海报本身，翻牌只转它 ---------- */
+
+.bravais-tile {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.bravais-tile:hover { z-index: 3; }
+.bravais-tile.is-focused { z-index: 4; }
+.bravais-tile.is-expanded { z-index: 20; }
+
+.bravais-tile-face {
+    inset: 0;
+    transform-origin: 50% 50%;
+    transition: box-shadow 600ms ease, filter 600ms ease, transform 300ms ease-out;
+}
+
+/* 悬停与键盘焦点：四边各外扩一个 GAP（--bravais-pop-x / -y 由外框按自己的尺寸给出）。 */
+.bravais-tile:hover > .bravais-tile-face:not(.is-wall):not(.is-expanded),
+.bravais-tile.is-focused > .bravais-tile-face:not(.is-wall):not(.is-expanded) {
+    transform: scale(var(--bravais-pop-x, 1), var(--bravais-pop-y, 1));
+}
+
+/* 空画框（墙面）：只有一道主色 7% 的发丝线。 */
+.lattice-poster.bravais-tile-face.is-wall {
+    cursor: default;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #fff) 7%, transparent);
+    filter: none;
+}
+
+.lattice-poster.bravais-tile-face.is-unavailable:not(.is-expanded) { filter: grayscale(0.85) brightness(0.8); }
+
+/* ---------- 聚焦卡 ---------- */
+
+.bravais-root .lattice-poster.is-expanded .lattice-poster-copy.bravais-focus-copy {
+    right: 32px;
+    bottom: 28px;
+    left: 32px;
+}
+
+.bravais-focus-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    margin-top: 7px;
+    font-size: 17px;
+    font-weight: 650;
+    opacity: 0.85;
+}
+
+.bravais-focus-links i { font-style: normal; opacity: 0.5; }
+
+.bravais-focus-links button {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    background: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: 5px;
+}
+
+.bravais-focus-links button:hover { text-decoration-color: currentColor; }
+
+/* 按钮排的出现与 Lattice 展开海报的控件行相同（WALL_REFLOW_CONTROLS_REVEAL，经 stage 根节点的三个变量给出）：卡片起步后
+   140ms 起、240ms 内从下方 12px 淡入（framer 补间的默认缓动 easeInOut）。只在开始前填充（backwards），放完就不在 getAnimations() 里。 */
+.bravais-focus-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 26px;
+    filter: drop-shadow(0 1px 3px var(--bravais-chrome-shadow));
+    animation: bravais-focus-actions-in var(--bravais-focus-reveal-duration, 0ms) cubic-bezier(0.42, 0, 0.58, 1)
+        var(--bravais-focus-reveal-delay, 0ms) backwards;
+}
+
+@keyframes bravais-focus-actions-in { from { opacity: 0; transform: translateY(var(--bravais-focus-reveal-rise, 0px)); } }
+
+/* 与 LatticeChrome 同一种按钮：无卡片底，静止时无描边，悬停才出现 12px 圆角框，主按钮常驻 16% 底色。 */
+.bravais-chrome-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    color: inherit;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+.bravais-chrome-button svg { width: 18px; height: 18px; flex-shrink: 0; }
+.bravais-chrome-button.is-primary { opacity: 1; background: color-mix(in srgb, currentColor 16%, transparent); }
+
+.bravais-chrome-button:hover:not(:disabled) {
+    opacity: 1;
+    border-color: color-mix(in srgb, currentColor 26%, transparent);
+    background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.bravais-chrome-button:disabled { opacity: 0.3; cursor: default; }
+.bravais-chrome-button:focus-visible { outline: 2px solid var(--text-accent, currentColor); outline-offset: 2px; }
+
+/* 聚焦卡的「立即播放」（实测反馈 1）：与 Lattice 展开海报上的播放键同一种——44px 方格、只有实心图标、静止时无底无框。 */
+.bravais-chrome-button.is-icon {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+    opacity: 1;
+}
+
+.bravais-chrome-button.is-icon svg { width: 20px; height: 20px; }
+
+/* 「已在队列」悬停 / 键盘聚焦时换成「插入队列」：两份文案叠在同一格（按较宽的那份占位，换显示时按钮不变宽），
+   藏着的那份 visibility:hidden，不进可访问名。 */
+.bravais-enqueue-labels { display: inline-grid; }
+
+.bravais-enqueue-labels > span {
+    display: inline-flex;
+    grid-area: 1 / 1;
+    align-items: center;
+    gap: 8px;
+}
+
+.bravais-enqueue-hover,
+.bravais-chrome-button.has-hover-label:is(:hover, :focus-visible):not(:disabled) .bravais-enqueue-rest { visibility: hidden; }
+
+.bravais-chrome-button.has-hover-label:is(:hover, :focus-visible):not(:disabled) .bravais-enqueue-hover { visibility: visible; }
+
+/* ---------- 缝：Lattice 主题材质，位置与宽度由 stage 每帧写 ---------- */
+
+.bravais-seam {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    width: 0;
+    overflow: hidden;
+    visibility: hidden;
+    color: var(--text-primary, #f7f4ee);
+    /* 材质（预设 / 透明的缝）见 bravaisSeamLooks.css；没写 --bravais-seam-surface 时就是主题纸色。 */
+    background: var(--bravais-seam-surface, var(--bravais-seam-paper));
+    box-shadow: var(--bravais-seam-shadow);
+    cursor: default;
+    user-select: none;
+}
+
+/* 内容按「此刻渲染的那一套」的宽度排版、居中（宽度与左外边距由组件给），翻转时绕 Y 轴转。 */
+.bravais-seam-content {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform-origin: 50% 50%;
+}
+
+.bravais-seam-body {
+    box-sizing: border-box;
+    height: 100%;
+}
+
+.bravais-seam button { font: inherit; color: inherit; }
+.bravais-seam button:focus-visible { outline: 2px solid var(--text-accent, currentColor); outline-offset: 2px; }
+
+.bravais-seam-icon,
+.bravais-seam-back {
+    display: grid;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.bravais-seam-back {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 8%);
+}
+
+.bravais-root.is-daylight .bravais-seam-back { background: rgb(0 0 0 / 5%); }
+
+.bravais-seam-icon svg,
+.bravais-seam-back svg { width: 16px; height: 16px; }
+
+.bravais-seam-icon:hover,
+.bravais-seam-level:hover,
+.bravais-seam-tabs button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, currentColor 26%, transparent);
+    background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.bravais-seam-vtitle {
+    max-height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: 0.04em;
+    writing-mode: vertical-rl;
+}
+
+.bravais-seam-vtitle.is-button { cursor: pointer; }
+.bravais-seam-spacer { flex: 1 1 auto; min-height: 0; }
+
+/* 首页窄缝 / 首页书脊 */
+.bravais-seam-home {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 22px 10px 0;
+    box-sizing: border-box;
+}
+
+.bravais-seam-home.is-compact { gap: 12px; padding: 16px 8px 0; }
+
+.bravais-seam-tabs {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.bravais-seam-tabs button {
+    padding: 10px 4px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    background: none;
+    cursor: pointer;
+    writing-mode: vertical-rl;
+}
+
+.bravais-seam-home.is-compact .bravais-seam-tabs button { font-size: 12px; letter-spacing: 0.1em; }
+.bravais-seam-tabs button.is-active { color: var(--text-primary, #f7f4ee); background: color-mix(in srgb, currentColor 14%, transparent); }
+.bravais-seam-tabs button:disabled { opacity: 0.35; cursor: default; }
+
+.bravais-seam-vstatus,
+.bravais-seam-vcount {
+    max-height: 40%;
+    overflow: hidden;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    writing-mode: vertical-rl;
+}
+
+/* 完整信息条 */
+.bravais-seam-full {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    gap: 14px;
+    padding: 22px 22px 0;
+    box-sizing: border-box;
+}
+
+.bravais-seam-crumbs {
+    display: flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 6px;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+}
+
+.bravais-seam-crumb-trail {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.bravais-seam-crumb-trail span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.bravais-seam-crumb-trail i { font-style: normal; }
+
+.bravais-seam-level {
+    flex: none;
+    padding: 3px 9px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 11px;
+    background: transparent;
+    cursor: pointer;
+}
+
+/* 竖排标题上下的一对引号成对角：上面那个靠右、下面那个靠左（完整信息条共用这一处）。 */
+.bravais-seam-quote { font-size: 28px; line-height: 0.6; opacity: 0.35; text-align: right; }
+.bravais-seam-quote.is-closing { text-align: left; }
+
+/* fb10：标题区域（引号 + 竖排大标题）整块是「收起信息条」按钮（BravaisSeamTitle）。排版与原来三块直接排在信息条里
+ * 一样（同一个 14px 间距、一起让位）；四周外扩 6 / 10px 的内边距再用负外边距抵掉，悬停时那一圈浅底不挤动别的内容。
+ * 悬停：浅底 + 引号变深一点；没有过渡之外的动效（换形态由缝整条翻）。 */
+.bravais-seam .bravais-seam-title-area {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 14px;
+    margin: -6px -10px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 14px;
+    color: inherit;
+    text-align: inherit;
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 140ms ease;
+}
+
+.bravais-seam .bravais-seam-title-area:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
+.bravais-seam-title-area .bravais-seam-quote { transition: opacity 140ms ease; }
+.bravais-seam-title-area:hover .bravais-seam-quote { opacity: 0.6; }
+/* 书脊上的竖排标题本身是 <button>：`.bravais-seam button { font: inherit }`（0,1,1）压过了 .bravais-seam-vtitle 的字重
+ * （0,1,0），书脊标题成了常规体。带上 .bravais-seam 把字重拿回来（与完整信息条的竖排大标题同为 800）；字体照旧继承，
+ * 不换字体。 */
+.bravais-seam .bravais-seam-vtitle { font-weight: 800; }
+.bravais-seam .bravais-seam-vtitle.is-button { border-radius: 8px; transition: background-color 140ms ease, box-shadow 140ms ease; }
+/* 书脊上的竖排标题（「展开信息条」）：同一种浅底，用外扩的阴影铺开一圈，不改书脊的排版。 */
+.bravais-seam .bravais-seam-vtitle.is-button:hover {
+    background: color-mix(in srgb, currentColor 6%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 6%, transparent);
+}
+
+/* 竖排大标题在上下引号之间的区域里水平、垂直都居中（实测反馈）；比区域还长时 safe 退回顶端对齐，不从两头裁。 */
+.bravais-seam-vtitle-wrap {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    align-items: safe center;
+    justify-content: safe center;
+    overflow: hidden;
+}
+
+.bravais-seam-rule { flex: none; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.bravais-seam-meta { color: var(--bravais-seam-ink-soft); font-size: 12px; line-height: 1.6; }
+.bravais-seam-status { font-size: 12px; line-height: 1.6; }
+
+/* 说明文字（歌手简介、集合描述，BravaisSeamBlurb）：收起时按 --bravais-blurb-lines 截断（默认 4 行；集合描述 6 行，
+ * fb10 星标挪进按钮行后让出来的那两行给了它，见 bravaisAbout.css），点开后封顶 14em、再长在块内滚动。
+ * 纵向空间不够时它和竖排标题一起让位（flex-shrink，至少留一行），所以展开不会把下面的按钮挤出缝。
+ * 它是个按钮：.bravais-seam button { font: inherit } 统一过缝里的按钮，规则要带上 .bravais-seam 才压得住。 */
+.bravais-seam .bravais-seam-blurb {
+    display: -webkit-box;
+    flex: 0 1 auto;
+    min-height: 1.5em;
+    max-height: calc(var(--bravais-blurb-lines, 4) * 1.8em);
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    color: var(--bravais-seam-ink-soft);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: transparent;
+    cursor: pointer;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--bravais-blurb-lines, 4);
+}
+
+.bravais-seam .bravais-seam-blurb.is-open {
+    display: block;
+    max-height: 14em;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-line-clamp: unset;
+}
+
+.bravais-seam .bravais-seam-blurb:focus-visible {
+    outline: 2px solid var(--text-accent, currentColor);
+    outline-offset: 3px;
+}
+
+.bravais-seam-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.bravais-seam-actions .bravais-chrome-button { min-height: 36px; padding: 0 12px; font-size: 12px; }
+.bravais-seam-actions .bravais-chrome-button svg { width: 14px; height: 14px; }
+
+/* 书脊 */
+.bravais-seam-spine {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 8px 0;
+    box-sizing: border-box;
+}
+
+/* ---------- 边缘标签：出屏收起时点它就地重开，折叠时点它恢复 ---------- */
+
+.bravais-seam-tab {
+    position: absolute;
+    top: 50%;
+    z-index: 6;
+    max-height: 60%;
+    overflow: hidden;
+    padding: 14px 8px;
+    border: 0;
+    color: var(--text-primary, #f7f4ee);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    background: var(--bravais-seam-surface, var(--bravais-seam-paper));
+    box-shadow: var(--bravais-seam-shadow);
+    cursor: pointer;
+    transform: translateY(-50%);
+    writing-mode: vertical-rl;
+}
+
+.bravais-seam-tab[data-side='left'] { left: 0; border-radius: 0 6px 6px 0; }
+.bravais-seam-tab[data-side='right'] { right: 0; border-radius: 6px 0 0 6px; }
+.bravais-seam-tab:focus-visible { outline: 2px solid var(--text-accent, currentColor); outline-offset: 2px; }
+
+:root[data-reduce-motion~='lattice'] .bravais-tile-face { transition: none; }
+:root[data-reduce-motion~='lattice'] .bravais-focus-actions { animation: none; }
+
+/* ---------- 缝里的小块出现（设计稿 §7「缝内的过渡」）：只动 transform / opacity ---------- */
+
+@keyframes bravais-seam-fade-in { from { opacity: 0; } }
+@keyframes bravais-seam-rise-in { from { opacity: 0; transform: translateY(6px); } }
+/* 边缘标签 / 悬浮按钮出现：从屏幕边缘滑进来（它常驻的 transform 是 translateY(-50%)，关键帧里带上）。 */
+@keyframes bravais-seam-tab-in-left { from { opacity: 0; transform: translate(-100%, -50%); } }
+@keyframes bravais-seam-tab-in-right { from { opacity: 0; transform: translate(100%, -50%); } }
+
+/* display 从 none 变回来时动画重新放一遍：标签每次出现都滑进来。 */
+.bravais-seam-tab[data-side='left'] { animation: bravais-seam-tab-in-left 240ms cubic-bezier(.2, .7, .25, 1); }
+.bravais-seam-tab[data-side='right'] { animation: bravais-seam-tab-in-right 240ms cubic-bezier(.2, .7, .25, 1); }
+.bravais-seam .bravais-form-error { animation: bravais-seam-rise-in 200ms cubic-bezier(.2, .7, .25, 1); }
+
+/* 降低动态效果（与换层翻牌同一套判断：lattice 或 collectionMorph）：只淡入。 */
+:root:is([data-reduce-motion~='lattice'], [data-reduce-motion~='collectionMorph']) :is(.bravais-seam-tab[data-side], .bravais-seam .bravais-form-error) {
+    animation: bravais-seam-fade-in 180ms ease-out;
+}
+
+/* ---------- 透光（B6b③，设计稿 §11）：实色底板、窗、全透明的标题磁贴、半透明的缝 ---------- */
+
+/* 墙面（与 wall.css 的 .lattice-root 同一身：两团主题光晕 + 底色）。实色档画在根节点上；透明档根节点不画底，
+   换成世界层之下的全屏底板（不透明、不 blur），遮罩只在窗位挖洞，露出下面的 visualizer。
+   B12b 起透明档的底板是世界层里按块的 SVG（见下方 .bravais-block-plate）。 */
+.bravais-root {
+    --bravais-wall-surface:
+        radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--text-accent, #fd5c47) 16%, transparent), transparent 29%),
+        radial-gradient(circle at 86% 82%, color-mix(in srgb, var(--text-secondary, #6a48ff) 20%, transparent), transparent 32%),
+        var(--bg-color, #070707);
+    /* 窗里 visualizer 没有画面时（没在播放、静止、暂停）垫的一层很淡的光晕，有画面时被它盖过。 */
+    --bravais-window-glow:
+        radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--text-accent, #fd5c47) 9%, transparent), transparent 70%);
+}
+
+/* 2026-10-09：实色档 + 「始终透明」的缝同样不画根节点的底（is-backdrop-open，墙面由块底板铺，缝的开口下面没有底板）；
+   缝的纸与噪点仍只按透光档（is-see-through）：透明的缝自己的材质在 bravaisSeamLooks.css，墙面噪点在缝之下、被纱盖住。 */
+.bravais-root.is-backdrop-open { background: transparent; }
+
+.bravais-root.is-see-through {
+    background: transparent;
+    /* 缝的纸条换成与底板同色的半透明材质（不 blur 时用较浓的一档；blur 由 BRAVAIS_SEAM_ACRYLIC_BLUR 决定，待换机实测）。 */
+    --bravais-seam-paper: color-mix(in srgb, color-mix(in srgb, var(--bg-color, #070707) 90%, var(--text-primary, #f7f4ee)) 80%, transparent);
+}
+
+/* 墙面的颗粒噪点（wall.css 的 .lattice-root::after）是全屏 soft-light 叠层，本来是给实色墙面加质感的；
+   透明档下它也压在窗上，等于给下面的 visualizer 蒙了一层噪点，所以透明档不画。实色档照旧，与 Lattice 一致。 */
+.bravais-root.is-see-through::after { display: none; }
+
+.bravais-root.has-seam-blur .bravais-seam,
+.bravais-root.has-seam-blur .bravais-seam-tab {
+    backdrop-filter: blur(18px);
+}
+
+/* 块底板（B12b）：每个已挂载的块一张内联 SVG，在世界层里、磁贴之下，随相机平移；evenodd 路径 = 外框减去窗洞，
+   不用 CSS 遮罩。填的是墙面的底色：墙面那两团主题光晕定位在视口上（屏幕固定），跟着世界走的底板画不出来，
+   而底板露出来的只有磁贴间约 6px 的缝隙与空画框，差别看不出来。2D translate：不为每块单独升合成层。 */
+.bravais-block-plate {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    transform-origin: 0 0;
+}
+
+.bravais-block-plate > path {
+    fill: var(--bg-color, #070707);
+}
+
+/* 窗：没有内容、不可聚焦、不可点；内容层透明，只垫一层很淡的光晕。 */
+.lattice-poster.bravais-tile-face.is-window {
+    cursor: default;
+    background: var(--bravais-window-glow);
+    box-shadow: none;
+    filter: none;
+}
+
+.lattice-poster.bravais-tile-face.is-window::after { display: none; }
+
+.bravais-root .bravais-tile:hover > .bravais-tile-face.is-window { transform: none; }
+
+/* 全透明：墙上的内容磁贴不画封面，只留 Lattice 的标题排版与 scrim（--lattice-shade-rgb 跟日光翻转），
+   正在播放的强调色描边照常（.is-current::before）。聚焦卡（展开的那张）照常画封面。
+   2026-10-09（用户定）：去掉底部的封面底条，透着的磁贴上只有标题。 */
+.lattice-poster.bravais-tile-face.is-see-through {
+    background: var(--bravais-window-glow);
+}
+

@@ -1,0 +1,61 @@
+/* src/library/suites/bravais/bravaisCrumbs.css
+   缝里可点的面包屑（B11，BravaisSeamCrumbs）：每一项单独截断，当前层占剩下的宽度；「…」展开后整条换行显示全部层。
+   fb10 起面包屑行只有 ‹ 与面包屑（「收起」「折叠」挪走了），面包屑拿到整行宽度。
+   按钮沿用面包屑行的字号与颜色，悬停时变成墨色并加下划线。 */
+
+.bravais-seam-crumb-trail .bravais-seam-crumb {
+    min-width: 0;
+    max-width: 9em;
+    flex: 0 1 auto;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bravais-seam-crumb-trail .bravais-seam-crumb.is-current,
+.bravais-seam-crumb-trail .bravais-seam-crumb.is-panel {
+    max-width: none;
+    flex: 0 1000 auto;
+}
+
+.bravais-seam-crumb-trail .bravais-seam-crumb.is-more { flex: none; }
+
+/* fb10：根（书库 / 搜索 / 播放页）只有两三个字，不截断——原来行右侧还有「收起」「折叠」两个按钮时，它会先被挤成「书…」。
+ * 去掉那两个按钮后面包屑拿到整行宽度：根不缩，中间层封顶 9em，剩下的给当前层（它最先让位：大标题就在下面）。 */
+.bravais-seam-crumb-trail .bravais-seam-crumb[data-bravais-crumb='root'] { max-width: none; flex: none; }
+
+.bravais-seam-crumb-trail button.bravais-seam-crumb {
+    cursor: pointer;
+    text-underline-offset: 3px;
+}
+
+.bravais-seam-crumb-trail button.bravais-seam-crumb:hover,
+.bravais-seam-crumb-trail button.bravais-seam-crumb:focus-visible {
+    color: var(--text-primary, currentColor);
+    text-decoration: underline;
+    outline: none;
+}
+
+/* 展开后往下换行：第一行留在收起时的位置（行高 32px 里居中的那一行），不往上长进窗口顶部的标题栏拖拽区。 */
+.bravais-seam-crumb-trail.is-expanded {
+    align-self: flex-start;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding-top: 9px;
+    white-space: normal;
+}
+
+.bravais-seam-crumb-trail.is-expanded .bravais-seam-crumb { max-width: 100%; }
+
+/* 展开出来的中间层（与它前面的分隔符）依次滑进来；降低动效时只淡入。fill backwards：等待错开的那一段里先藏着。 */
+.bravais-seam-crumb-trail .is-revealed { animation: bravais-seam-crumb-in 200ms cubic-bezier(.2, .7, .25, 1) backwards; }
+@keyframes bravais-seam-crumb-in { from { opacity: 0; transform: translateX(-6px); } }
+:root:is([data-reduce-motion~='lattice'], [data-reduce-motion~='collectionMorph']) .bravais-seam-crumb-trail .is-revealed {
+    animation-name: bravais-seam-fade-in;
+}

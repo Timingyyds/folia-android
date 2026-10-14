@@ -1,0 +1,50 @@
+/* src/library/suites/bravais/bravaisArtist.css
+ * 歌手页「关于艺术家」的署名一行（B8，2026-10-08 改成书勒口式的作者简介）：圆形头像 + 名字 + 别名。小节标题、正文与附注
+ * 在 bravaisAbout.css（与集合页的简介共用）。颜色只用缝的主题变量（--bravais-seam-ink-soft、currentColor），跟着明暗主题与
+ * 透光档的纸条材质走。 */
+
+.bravais-seam-artist-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.bravais-seam-artist-avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.bravais-seam-artist-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    user-select: none;
+    pointer-events: none;
+}
+
+.bravais-seam-artist-avatar svg { width: 18px; height: 18px; opacity: 0.35; }
+
+.bravais-seam-artist-facts {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.bravais-seam-artist-name,
+.bravais-seam-artist-aliases {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bravais-seam-artist-name { font-size: 13px; font-weight: 700; line-height: 1.4; letter-spacing: 0.01em; }
+.bravais-seam-artist-aliases { color: var(--bravais-seam-ink-soft); font-size: 11px; line-height: 1.45; }

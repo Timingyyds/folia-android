@@ -1,0 +1,21 @@
+/* dev/probes/bravais-perf/probe.css — bravais 性能探针的外壳：visualizer 在最下面，stage 盖在上面，面板浮在右上角。 */
+.bperf-root { position: fixed; inset: 0; overflow: hidden; background: var(--bg-color, #070707); }
+.bperf-visualizer { position: absolute; inset: 0; z-index: 0; }
+.bperf-stage { position: absolute; inset: 0; z-index: 1; }
+
+/* 缝的亚克力 blur：与 bravais.css 里 `.bravais-root.has-seam-blur .bravais-seam(-tab)` 同一条规则（那边由常量
+   BRAVAIS_SEAM_ACRYLIC_BLUR 开关，现在关着）。探针按任务的 seamBlur 在外层挂类名打开它，不改 suite 的常量。 */
+.bperf-seam-blur .bravais-root.is-see-through .bravais-seam,
+.bperf-seam-blur .bravais-root.is-see-through .bravais-seam-tab { backdrop-filter: blur(18px); }
+
+.bperf-panel { position: fixed; z-index: 400; right: 12px; top: 12px; width: min(720px, calc(100vw - 24px)); max-height: calc(100vh - 24px);
+    overflow: auto; color: #eee; background: rgb(14 20 26 / 92%); border: 1px solid #456; border-radius: 10px; padding: 12px; font: 12px system-ui; }
+.bperf-panel.is-collapsed { width: auto; padding: 6px 10px; }
+.bperf-panel h1 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.bperf-panel p { margin: 4px 0; color: #b8c4cc; }
+.bperf-panel fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 0; padding: 6px 0; margin: 0; }
+.bperf-panel button, .bperf-panel select { background: #304657; border: 1px solid #637a8b; border-radius: 5px; padding: 4px 8px; color: #eee; }
+.bperf-panel button:disabled, .bperf-panel fieldset:disabled { opacity: .5; }
+.bperf-panel table { border-collapse: collapse; white-space: nowrap; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.bperf-panel td, .bperf-panel th { padding: 3px 6px; border-bottom: 1px solid #345; text-align: right; }
+.bperf-panel td:nth-child(-n+3), .bperf-panel th:nth-child(-n+3) { text-align: left; }

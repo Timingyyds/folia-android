@@ -1,0 +1,60 @@
+/* src/ui/wall/WallBackButton.css — 墙面左上角的返回按钮（WallBackButton），Lattice 与 bravais 共用。
+   .lattice-back 的规则原在 ui/app/lattice/Lattice.css，整段搬来（实测反馈 1）；is-concealed 是 bravais 的
+   隐藏式用法：平时不显示，鼠标进入左上角热区或键盘聚焦时出现（与播放页 VisualizerShell 左上角那颗的行为一致）。 */
+
+/* Same shape and weight as the grid and player back buttons, and the one place the wall's
+   square-everything rule is deliberately overridden. */
+.lattice-back {
+    position: absolute;
+    top: 20px;
+    left: 24px;
+    z-index: 5;
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border: none;
+    border-radius: 999px !important;
+    color: inherit;
+    background: rgb(255 255 255 / 8%);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 24%);
+    backdrop-filter: blur(8px);
+    transition: transform 200ms ease, background-color 200ms ease;
+    pointer-events: auto;
+}
+
+.lattice-root.is-daylight .lattice-back { background: rgb(0 0 0 / 5%); }
+.lattice-back:hover { transform: scale(1.05); }
+.lattice-back:active { transform: scale(0.95); }
+
+/* 隐藏式：出现 / 消失与播放页那颗相同（0.2s 淡入、略缩小并左移 6px）。隐藏时不接指针，热区判定在组件里。 */
+.lattice-back.is-concealed {
+    transition: opacity 200ms ease, transform 200ms ease, background-color 200ms ease;
+}
+
+.lattice-back.is-concealed:not(.is-revealed):not(:focus-visible) {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.92);
+    pointer-events: none;
+}
+
+/* 键盘聚焦的环只给隐藏式（Lattice 那颗保持浏览器默认，不改它的外观）。 */
+.lattice-back.is-concealed:focus-visible {
+    outline: 2px solid var(--text-accent, currentColor);
+    outline-offset: 2px;
+}
+
+/* 没有悬停的设备（触屏）摸不到热区，常驻显示。 */
+@media (hover: none) {
+    .lattice-back.is-concealed:not(.is-revealed):not(:focus-visible) {
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+}
+
+:root[data-reduce-motion~='lattice'] .lattice-back.is-concealed { transition: none; }
+
+@media (max-width: 640px) {
+    .lattice-back { top: 14px; left: 16px; }
+}

@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bravais 磁贴种类</title>
+<!-- Bravais 磁贴种类区分原型：歌曲保持满版海报，专辑 / 歌单左侧加书脊（曲目数竖排），歌手换成双色调人像、名字放大，悬停恢复原色。
+     块模板、尺寸、海报样式抄自 src/components/wall（blockTemplates.ts、wall.css）与 bravais.css，主题预设抄自 src/services/baseThemes.ts；
+     封面是程序生成的假图。单文件、不依赖构建。 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;650;800&family=Noto+Sans+SC:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --ink: var(--text-primary);
+    --shade-rgb: 0 0 0;
+    --poster-bg: color-mix(in srgb, var(--bg-color) 88%, var(--ink));
+    --hairline: color-mix(in srgb, var(--text-primary) 7%, transparent);
+    --tint-opacity: 0.5;
+    --spine-w: 18px;
+}
+:root.is-daylight {
+    --shade-rgb: 255 255 255;
+    --poster-bg: color-mix(in srgb, var(--bg-color) 94%, var(--ink));
+    --tint-opacity: 0.36;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+    color: var(--text-primary);
+    font-family: Inter, "Noto Sans SC", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background:
+        radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--text-accent) 16%, transparent), transparent 29%),
+        radial-gradient(circle at 86% 82%, color-mix(in srgb, var(--text-secondary) 20%, transparent), transparent 32%),
+        var(--bg-color);
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+
+#field { position: fixed; inset: 0; overflow: clip; cursor: grab; touch-action: none; user-select: none; }
+#field.dragging { cursor: grabbing; }
+#field::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; opacity: .13; mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+}
+:root.is-daylight #field::after { opacity: .07; }
+#field::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+    background: radial-gradient(ellipse at center, transparent 78%, rgb(0 0 0 / 52%) 100%);
+}
+:root.is-daylight #field::before { background: radial-gradient(ellipse at center, transparent 78%, rgb(0 0 0 / 16%) 100%); }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.block { position: absolute; }
+
+/* ---- 海报：与 wall.css / bravais.css 相同 ---- */
+.tile { position: absolute; }
+.tile:hover { z-index: 3; }
+.tile.is-focused { z-index: 4; }
+.poster {
+    position: absolute; inset: 0; overflow: hidden; cursor: pointer; color: var(--ink);
+    background-color: var(--poster-bg); background-size: cover; background-position: center;
+    transition: transform .3s ease-out, filter .6s ease, box-shadow .6s ease;
+    contain: layout paint;
+}
+.tile:hover .poster, .tile.is-focused .poster { transform: scale(var(--pop-x), var(--pop-y)); }
+.tile:hover .poster { filter: saturate(1.08) brightness(1.05); }
+.tile.is-wall .poster { cursor: default; background: none; box-shadow: inset 0 0 0 1px var(--hairline); transform: none; filter: none; }
+.tile.is-focused .poster { contain: layout; box-shadow: 0 0 0 1px rgb(0 0 0 / 62%), 0 0 0 4px var(--text-primary), 0 0 0 5px rgb(0 0 0 / 38%), 0 12px 32px rgb(0 0 0 / 45%); }
+:root.is-daylight .tile.is-focused .poster { box-shadow: 0 0 0 1px rgb(255 255 255 / 78%), 0 0 0 4px var(--text-primary), 0 0 0 5px rgb(255 255 255 / 45%), 0 12px 32px rgb(0 0 0 / 25%); }
+.tile.is-current .poster::before {
+    content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+    border: 2px solid var(--text-accent);
+    box-shadow: inset 0 0 0 1px rgb(var(--shade-rgb) / 52%), inset 0 0 15px -7px color-mix(in srgb, var(--text-accent) 46%, transparent);
+}
+.shade {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgb(var(--shade-rgb) / 5%) 34%, rgb(var(--shade-rgb) / 24%) 56%, rgb(var(--shade-rgb) / 92%) 100%);
+}
+.tint {
+    position: absolute; inset: 0; z-index: 3; opacity: 0; pointer-events: none; transition: opacity .26s ease;
+    background: linear-gradient(145deg,
+        color-mix(in srgb, var(--bg-color) 78%, var(--text-accent)),
+        color-mix(in srgb, var(--bg-color) 84%, var(--text-secondary)));
+}
+:root.has-tint .tint { opacity: var(--tint-opacity); }
+.tile:hover .tint, .tile.is-focused .tint, .tile.is-current .tint { opacity: 0; }
+.badge {
+    position: absolute; top: 14px; left: 14px; z-index: 5; padding: 5px 8px;
+    font-size: 11px; font-weight: 800; letter-spacing: .12em; font-variant-numeric: tabular-nums;
+    background: rgb(var(--shade-rgb) / 62%);
+}
+.tile.is-current .badge { color: var(--text-accent); background: rgb(var(--shade-rgb) / 78%); }
+.copy { position: absolute; left: 17px; right: 17px; bottom: 17px; z-index: 5; display: flex; flex-direction: column; gap: 5px; }
+.copy strong {
+    font-weight: 800; line-height: .96; letter-spacing: -.045em; text-wrap: balance;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    padding-block: .14em; margin-block: -.14em;
+}
+.copy small { font-size: 13px; font-weight: 650; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- 书脊（专辑 / 歌单）---- */
+.spine {
+    position: absolute; left: 0; top: 0; bottom: 0; width: var(--spine-w); z-index: 4; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+}
+/* 封面压暗：书脊用封面自己左缘那一条，压暗后像封套折进去的侧边。 */
+.spine.from-cover::before {
+    content: ''; position: absolute; inset: 0; background-image: var(--cover); background-size: var(--cover-size); background-position: left center;
+    filter: brightness(.42) saturate(1.25);
+}
+.spine.from-shade { background: rgb(var(--shade-rgb) / 62%); }
+.spine.from-cover, .spine.from-shade { box-shadow: inset -1px 0 0 rgb(255 255 255 / 22%), 1px 0 0 rgb(0 0 0 / 35%); }
+:root.is-daylight .spine.from-shade { box-shadow: inset -1px 0 0 rgb(0 0 0 / 14%); }
+.spine.hairline { box-shadow: 1px 0 0 color-mix(in srgb, var(--text-primary) 55%, transparent); }
+.spine span {
+    position: relative; writing-mode: vertical-rl; white-space: nowrap;
+    font-size: 11px; font-weight: 800; letter-spacing: .12em; font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+.spine.from-cover span { color: #f7f4ee; }
+.has-spine .badge { left: calc(var(--spine-w) + 12px); }
+.has-spine .copy { left: calc(var(--spine-w) + 15px); }
+
+/* ---- 歌手：双色调人像，悬停 / 聚焦 / 正在播放恢复原色 ---- */
+.duo { position: absolute; inset: 0; isolation: isolate; background: var(--duo-light); transition: opacity .3s ease-out; }
+.duo i {
+    position: absolute; inset: 0; background-image: var(--cover); background-size: cover; background-position: center;
+    filter: grayscale(1) contrast(1.15) brightness(1.05); mix-blend-mode: multiply;
+}
+.duo::after { content: ''; position: absolute; inset: 0; background: var(--duo-dark); mix-blend-mode: lighten; }
+:root .duo { --duo-dark: color-mix(in srgb, var(--bg-color) 88%, var(--duo-light)); }
+:root.is-daylight .duo { --duo-dark: color-mix(in srgb, var(--text-primary) 82%, var(--duo-light)); }
+.tile:hover .duo, .tile.is-focused .duo { opacity: 0; }
+.is-artist .copy strong { letter-spacing: -.05em; }
+.is-artist .copy small { display: none; }
+.artist-names-big .is-artist .copy small { display: none; }
+
+/* 对照：批量模式的「未选中」（只出现在本地目录面板的文件夹卡片上）。 */
+.tile.is-unselected .poster { filter: grayscale(1); opacity: .35; }
+
+/* ---- 面板 ---- */
+#panel {
+    position: fixed; top: 16px; right: 16px; z-index: 10; width: 300px; max-height: calc(100vh - 32px); overflow: auto;
+    padding: 14px; border-radius: 24px; color: #f7f4ee;
+    background: rgb(0 0 0 / 55%); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    font-size: 12px;
+}
+#panel h1 { margin: 2px 6px 10px; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+#panel .row { margin: 0 0 10px; }
+#panel .lab { margin: 0 6px 5px; opacity: .62; font-weight: 650; }
+#panel .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+#panel .seg button {
+    flex: 1 0 auto; padding: 6px 9px; border: 1px solid rgb(255 255 255 / 12%); border-radius: 12px; background: none;
+    font-size: 12px; font-weight: 650;
+}
+#panel .seg button:hover { border-color: rgb(255 255 255 / 30%); }
+#panel .seg button.on { background: #f7f4ee; color: #111; border-color: transparent; }
+#panel input[type=range] { width: 100%; }
+#panel .collapse { position: absolute; top: 12px; right: 14px; border: 0; background: none; opacity: .6; font-size: 12px; }
+#panel.min > :not(h1):not(.collapse) { display: none; }
+#hint {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10; padding: 7px 12px; border-radius: 12px;
+    background: rgb(0 0 0 / 55%); color: #f7f4ee; font-size: 12px; backdrop-filter: blur(12px);
+}
+</style>
+</head>
+<body>
+<div id="field"><div id="world"></div></div>
+
+<div id="panel">
+    <h1>磁贴种类</h1>
+    <button class="collapse" data-collapse>收起</button>
+    <div class="row"><div class="lab">方案</div><div class="seg" data-opt="mode">
+        <button data-v="kinds">书脊 + 双色调</button><button data-v="current">现状（只有标签）</button></div></div>
+    <div class="row"><div class="lab">书脊底色</div><div class="seg" data-opt="spine">
+        <button data-v="cover">封面压暗</button><button data-v="shade">遮罩色（同标签）</button><button data-v="hairline">只一道线</button></div></div>
+    <div class="row"><div class="lab">书脊宽度</div><div class="seg" data-opt="spineW">
+        <button data-v="12">12</button><button data-v="18">18</button><button data-v="24">24</button></div></div>
+    <div class="row"><div class="lab">书脊文字</div><div class="seg" data-opt="spineText">
+        <button data-v="count">曲目数</button><button data-v="none">无</button></div></div>
+    <div class="row"><div class="lab">歌单</div><div class="seg" data-opt="playlist">
+        <button data-v="spine">也有书脊</button><button data-v="plain">不加</button></div></div>
+    <div class="row"><div class="lab">歌手双色调的亮色</div><div class="seg" data-opt="duo">
+        <button data-v="photo">取自头像</button><button data-v="accent">主题强调色</button><button data-v="secondary">主题第二色</button><button data-v="off">不处理</button></div></div>
+    <div class="row"><div class="lab">主题</div><div class="seg" data-opt="theme">
+        <button data-v="midnight">午夜墨染（默认）</button><button data-v="daylight">日光素白</button><button data-v="vivid">彩色主题</button></div></div>
+    <div class="row"><div class="lab">海报叠色</div><div class="seg" data-opt="tint">
+        <button data-v="off">关</button><button data-v="on">开</button></div></div>
+    <div class="row"><div class="lab">对照：批量未选中（灰度 + 35%）</div><div class="seg" data-opt="unsel">
+        <button data-v="off">不显示</button><button data-v="on">混入几张</button></div></div>
+    <div class="row"><div class="lab">缩放 <span id="zoomOut"></span></div>
+        <input type="range" min="0.35" max="1.2" step="0.05" id="zoom"></div>
+</div>
+<div id="hint">拖动 / 滚轮平移 · 点击磁贴看聚焦环 · 悬停歌手恢复原色</div>
+
+<script>
+// ---- 几何：与 src/components/wall/blockTemplates.ts、bravaisConstants.ts 相同 ----
+const CELL = 128, GAP = 8, PITCH = CELL + GAP;
+const BLOCK_COLS = 12, BLOCK_ROWS = 8;
+const BLOCK_W = BLOCK_COLS * PITCH, BLOCK_H = BLOCK_ROWS * PITCH;
+const TEMPLATES = [
+    [[0,0,3,2],[3,0,6,4],[9,0,3,2],[0,2,3,2],[9,2,3,4],[0,4,4,4],[4,4,2,2],[6,4,3,2],[4,6,2,2],[6,6,2,2],[8,6,2,2],[10,6,2,2]],
+    [[0,0,2,3],[2,0,2,3],[4,0,2,3],[6,0,6,4],[0,3,6,2],[6,4,2,4],[8,4,2,4],[10,4,2,2],[0,5,2,3],[2,5,2,3],[4,5,2,3],[10,6,2,2]],
+    [[0,0,6,4],[6,0,6,3],[6,3,4,3],[10,3,2,2],[0,4,4,2],[4,4,2,2],[10,5,2,3],[0,6,2,2],[2,6,2,2],[4,6,2,2],[6,6,2,2],[8,6,2,2]],
+    [[0,0,2,2],[2,0,2,2],[4,0,4,3],[8,0,2,4],[10,0,2,4],[0,2,2,3],[2,2,2,2],[4,3,4,3],[2,4,2,2],[8,4,4,4],[0,5,2,3],[2,6,6,2]],
+].map(t => t.map(([x, y, cols, rows]) => ({ x, y, cols, rows })));
+const flipX = s => s.map(o => ({ ...o, x: BLOCK_COLS - o.x - o.cols }));
+const flipY = s => s.map(o => ({ ...o, y: BLOCK_ROWS - o.y - o.rows }));
+const REFLECTIONS = [s => s, flipX, flipY, s => flipX(flipY(s))];
+const ORIENTED = TEMPLATES.flatMap(t => REFLECTIONS.map(r => r(t)));
+const mixBlock = (c, r) => {
+    let v = Math.imul(c, 0x9e3779b1) ^ Math.imul(r, 0x85ebca6b);
+    v = Math.imul(v ^ (v >>> 15), 0x2c1b3c6d);
+    v ^= v >>> 12;
+    return v >>> 0;
+};
+const blockTemplate = (c, r) => {
+    const n = TEMPLATES.length;
+    const t = ((c + r * 2) % n + n) % n;
+    return ORIENTED[t * 4 + mixBlock(c, r) % 4];
+};
+const hash3 = (a, b, c) => mixBlock(mixBlock(a, b), c);
+const hashStr = s => [...s].reduce((h, ch) => Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0, 0x811c9dc5);
+
+// ---- 主题：与 src/services/baseThemes.ts 相同，外加一套彩色主题看强调色有颜色时的样子 ----
+const THEMES = {
+    midnight: { bg: '#09090b', primary: '#f4f4f5', accent: '#f4f4f5', secondary: '#71717a', day: false },
+    daylight: { bg: '#f5f5f4', primary: '#1c1917', accent: '#ea580c', secondary: '#44403c', day: true },
+    vivid: { bg: '#0b0a0c', primary: '#f7f4ee', accent: '#fd5c47', secondary: '#6a48ff', day: false },
+};
+
+// ---- 假数据 ----
+const TRACKS = [
+    ['夜に駆ける', 'YOASOBI'], ['カタオモイ', 'Aimer'], ['Lemon', '米津玄師'], ['残響散歌', 'Aimer'], ['群青', 'YOASOBI'],
+    ['晴天', '周杰伦'], ['稻香', '周杰伦'], ['KICK BACK', '米津玄師'], ['春泥棒', 'ヨルシカ'], ['ただ君に晴れ', 'ヨルシカ'],
+    ['阿楚姑娘', '许巍'], ['蓝莲花', '许巍'], ['Pretender', 'Official髭男dism'], ['Subtitle', 'Official髭男dism'],
+    ['水星', 'tofubeats'], ['白日', 'King Gnu'], ['逆夢', 'King Gnu'], ['花に亡霊', 'ヨルシカ'], ['勇者', 'YOASOBI'],
+    ['平凡之路', '朴树'], ['那些花儿', '朴树'], ['Plastic Love', '竹内まりや'], ['真夜中のドア', '松原みき'], ['愛にできることはまだあるかい', 'RADWIMPS'],
+].map(([title, sub], i) => ({ id: 't' + i, kind: 'track', title, sub }));
+const ALBUMS = [
+    ['THE BOOK', 'YOASOBI · 2021', 12], ['Walpurgis', 'Aimer · 2021', 14], ['STRAY SHEEP', '米津玄師 · 2020', 15],
+    ['盗作', 'ヨルシカ · 2020', 14], ['CEREMONY', 'King Gnu · 2020', 13], ['叶惠美', '周杰伦 · 2003', 11],
+    ['时光·漫步', '许巍 · 2002', 10], ['我去2000年', '朴树 · 1999', 10], ['Editorial', 'Official髭男dism · 2021', 14],
+    ['VARIETY', '竹内まりや · 1984', 11], ['人間開花', 'RADWIMPS · 2016', 15], ['LOST CORNER', '米津玄師 · 2024', 20],
+].map(([title, sub, n], i) => ({ id: 'a' + i, kind: 'album', title, sub, count: n }));
+const ARTISTS = [
+    ['YOASOBI', 'ヨアソビ'], ['Aimer', 'エメ'], ['米津玄師', 'Kenshi Yonezu'], ['ヨルシカ', 'Yorushika'],
+    ['周杰伦', 'Jay Chou'], ['许巍', 'Xu Wei'], ['King Gnu', 'キングヌー'], ['朴树', 'Pu Shu'],
+].map(([title, sub], i) => ({ id: 'r' + i, kind: 'artist', title, sub }));
+const PLAYLISTS = [
+    ['深夜通勤', 48], ['雨の日に', 31], ['写代码', 112], ['City Pop 入门', 60], ['周末下午', 27], ['跑步 170 BPM', 44],
+].map(([title, n], i) => ({ id: 'p' + i, kind: 'playlist', title, sub: '我的歌单', count: n }));
+const BADGE = { track: '歌曲', album: '专辑', artist: '歌手', playlist: '歌单' };
+// 混合墙（首页 / 歌手页 / 搜索）的大致比例：歌曲一半，其余三种分。
+const POOL = [...TRACKS, ...TRACKS, ...ALBUMS, ...ALBUMS, ...ARTISTS, ...ARTISTS, ...PLAYLISTS];
+const NOW_PLAYING = 't1';
+
+// ---- 程序生成的封面 / 人像（替代真图）----
+const covers = new Map();
+function rng(seed) {
+    let s = seed >>> 0 || 1;
+    return () => ((s = Math.imul(s ^ (s >>> 15), 0x2c1b3c6d) + 0x6d2b79f5 >>> 0) / 4294967296);
+}
+// 按条目 id 画一张 320px 的假封面，同时算出平均色（「取自头像」的双色调用它）。
+function coverFor(item) {
+    if (covers.has(item.id)) return covers.get(item.id);
+    const S = 320, cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const g = cv.getContext('2d', { willReadFrequently: true }), R = rng(hashStr(item.id) + 7);
+    const h = Math.floor(R() * 360);
+    const hsl = (hh, s, l, a = 1) => `hsla(${(hh % 360 + 360) % 360},${s}%,${l}%,${a})`;
+    if (item.kind === 'artist') {
+        const bg = g.createRadialGradient(S * .5, S * .35, 10, S * .5, S * .5, S * .75);
+        bg.addColorStop(0, hsl(h, 38, 58)); bg.addColorStop(1, hsl(h + 20, 40, 14));
+        g.fillStyle = bg; g.fillRect(0, 0, S, S);
+        g.filter = 'blur(10px)';
+        for (let i = 0; i < 7; i++) { g.fillStyle = hsl(h + 40 + R() * 60, 80, 72, .4); g.beginPath(); g.arc(R() * S, R() * S * .6, 8 + R() * 22, 0, 7); g.fill(); }
+        g.filter = 'blur(1.2px)';
+        const skin = hsl(25 + R() * 10, 30, 48);
+        g.fillStyle = hsl(h + 180, 18, 16);
+        g.beginPath(); g.ellipse(S * .5, S * 1.04, S * .4, S * .3, 0, 0, 7); g.fill();
+        g.fillStyle = skin;
+        g.fillRect(S * .455, S * .6, S * .09, S * .14);
+        g.beginPath(); g.ellipse(S * .5, S * .5, S * .13, S * .165, 0, 0, 7); g.fill();
+        g.fillStyle = hsl(20, 25, 10);
+        g.beginPath(); g.ellipse(S * .5, S * .42, S * .155, S * .13, 0, Math.PI, 0); g.fill();
+        g.fillRect(S * .345, S * .4, S * .04, S * .2); g.fillRect(S * .615, S * .4, S * .04, S * .2);
+        g.filter = 'none';
+    } else {
+        const style = hashStr(item.id) % 4;
+        if (style === 0) {
+            const lg = g.createLinearGradient(0, 0, S, S);
+            lg.addColorStop(0, hsl(h, 62, 56)); lg.addColorStop(1, hsl(h + 52, 58, 16));
+            g.fillStyle = lg; g.fillRect(0, 0, S, S);
+            g.fillStyle = hsl(h + 180, 72, 62, .85); g.beginPath(); g.arc(S * (.3 + R() * .4), S * (.3 + R() * .4), S * (.18 + R() * .14), 0, 7); g.fill();
+            g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2;
+            for (let i = 0; i < 5; i++) { const y = S * (.1 + i * .05); g.beginPath(); g.moveTo(S * .08, y); g.lineTo(S * .5, y); g.stroke(); }
+        } else if (style === 1) {
+            let y = 0;
+            while (y < S) { const bh = 20 + R() * 80; g.fillStyle = hsl(h + R() * 50 - 25, 40 + R() * 40, 20 + R() * 55); g.fillRect(0, y, S, bh); y += bh; }
+        } else if (style === 2) {
+            g.fillStyle = hsl(h, 30, 7); g.fillRect(0, 0, S, S);
+            g.filter = 'blur(28px)';
+            for (let i = 0; i < 3; i++) { g.fillStyle = hsl(h + i * 40, 85, 55, .9); g.beginPath(); g.arc(R() * S, R() * S, 50 + R() * 70, 0, 7); g.fill(); }
+            g.filter = 'none';
+        } else {
+            g.fillStyle = hsl(h, 18, 86); g.fillRect(0, 0, S, S);
+            g.fillStyle = hsl(h + 180, 30, 12); g.fillRect(S * (.15 + R() * .2), S * (.2 + R() * .2), S * .4, S * .4);
+            g.save(); g.translate(S * .6, S * .65); g.rotate(-.5 + R()); g.fillStyle = hsl(h + 10, 75, 48); g.fillRect(-S * .3, -10, S * .6, 20); g.restore();
+        }
+    }
+    const img = g.getImageData(0, 0, S, S), d = img.data;
+    let sr = 0, sg = 0, sb = 0;
+    for (let i = 0; i < d.length; i += 4) {
+        sr += d[i]; sg += d[i + 1]; sb += d[i + 2];
+        const n = (R() - .5) * 26; d[i] += n; d[i + 1] += n; d[i + 2] += n;
+    }
+    g.putImageData(img, 0, 0);
+    const px = d.length / 4;
+    const entry = { url: cv.toDataURL('image/jpeg', .86), avg: [sr / px, sg / px, sb / px] };
+    covers.set(item.id, entry);
+    return entry;
+}
+// 平均色 → 同色相、提饱和提亮度的一色，当双色调的亮端（每位歌手一色，但处理方式统一）。
+function photoLight([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0;
+    if (max !== min) {
+        const d = max - min;
+        h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        h *= 60;
+    }
+    return `hsl(${Math.round(h)} 62% 66%)`;
+}
+
+// ---- 选项 ----
+const opts = { mode: 'kinds', spine: 'cover', spineW: '18', spineText: 'count', playlist: 'spine', duo: 'photo', theme: 'midnight', tint: 'off', unsel: 'off', zoom: innerWidth < 640 ? 0.52 : innerWidth < 1100 ? 0.64 : 0.76 };
+
+function tileEl(item, rect, hv) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.style.cssText = `left:${rect.x}px;top:${rect.y}px;width:${rect.w}px;height:${rect.h}px;` +
+        `--pop-x:${((rect.w + GAP * 2) / rect.w).toFixed(4)};--pop-y:${((rect.h + GAP * 2) / rect.h).toFixed(4)}`;
+    const poster = document.createElement('article');
+    poster.className = 'poster';
+    el.appendChild(poster);
+    if (!item) { el.classList.add('is-wall'); return el; }
+
+    const cover = coverFor(item);
+    poster.style.backgroundImage = `url("${cover.url}")`;
+    poster.style.setProperty('--cover', `url("${cover.url}")`);
+    poster.style.setProperty('--cover-size', `${Math.max(rect.w, rect.h)}px`);
+    if (item.id === NOW_PLAYING) el.classList.add('is-current');
+    if (opts.unsel === 'on' && hv % 11 === 0) el.classList.add('is-unselected');
+
+    const kinds = opts.mode === 'kinds';
+    const isArtist = kinds && item.kind === 'artist';
+    const hasSpine = kinds && (item.kind === 'album' || (item.kind === 'playlist' && opts.playlist === 'spine'));
+    let html = '';
+    if (isArtist && opts.duo !== 'off') {
+        const light = opts.duo === 'photo' ? photoLight(cover.avg) : `var(--text-${opts.duo})`;
+        html += `<span class="duo" style="--duo-light:${light}"><i></i></span>`;
+    }
+    html += '<span class="shade"></span><span class="tint"></span>';
+    if (hasSpine) {
+        const label = opts.spineText === 'count' ? `<span>${item.count} 首</span>` : '';
+        html += `<span class="spine ${opts.spine === 'hairline' ? 'hairline' : 'from-' + opts.spine}">${label}</span>`;
+        el.classList.add('has-spine');
+    }
+    if (isArtist) el.classList.add('is-artist');
+    html += '<span class="badge"></span><span class="copy"><strong></strong><small></small></span>';
+    poster.innerHTML = html;
+    poster.querySelector('.badge').textContent = BADGE[item.kind];
+    const fs = Math.round(Math.max(22, Math.min(36, rect.w * .1)) * (isArtist ? 1.3 : 1));
+    const strong = poster.querySelector('strong');
+    strong.style.fontSize = fs + 'px';
+    strong.textContent = item.title;
+    // 书脊上已经写了曲目数，副标题只留「歌手 · 年份」；现状下把曲目数拼回副标题。
+    poster.querySelector('small').textContent = item.count && !hasSpine ? `${item.sub} · ${item.count} 首` : item.sub;
+    return el;
+}
+
+function blockEl(c, r) {
+    const el = document.createElement('div');
+    el.className = 'block';
+    el.style.left = c * BLOCK_W + 'px';
+    el.style.top = r * BLOCK_H + 'px';
+    blockTemplate(c, r).forEach((s, i) => {
+        const hv = hash3(c, r, i);
+        const item = hv % 29 === 0 ? null : POOL[hv % POOL.length];
+        el.appendChild(tileEl(item, { x: s.x * PITCH, y: s.y * PITCH, w: s.cols * PITCH - GAP, h: s.rows * PITCH - GAP }, hv >>> 5));
+    });
+    return el;
+}
+
+// ---- 相机 ----
+const field = document.getElementById('field'), world = document.getElementById('world');
+const cam = { x: BLOCK_W * .2, y: BLOCK_H * .15 };
+const blocks = new Map();
+function render() {
+    const z = opts.zoom, vw = field.clientWidth / z, vh = field.clientHeight / z, over = 300;
+    world.style.transform = `translate(${-cam.x * z}px, ${-cam.y * z}px) scale(${z})`;
+    const c0 = Math.floor((cam.x - over) / BLOCK_W), c1 = Math.floor((cam.x + vw + over) / BLOCK_W);
+    const r0 = Math.floor((cam.y - over) / BLOCK_H), r1 = Math.floor((cam.y + vh + over) / BLOCK_H);
+    const want = new Set();
+    for (let c = c0; c <= c1; c++) for (let r = r0; r <= r1; r++) {
+        const k = c + ',' + r; want.add(k);
+        if (!blocks.has(k)) { const el = blockEl(c, r); blocks.set(k, el); world.appendChild(el); }
+    }
+    for (const [k, el] of blocks) if (!want.has(k)) { el.remove(); blocks.delete(k); }
+}
+function rebuild() { for (const el of blocks.values()) el.remove(); blocks.clear(); focused = null; render(); }
+
+let drag = null, focused = null;
+field.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: false }; field.setPointerCapture(e.pointerId); });
+field.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+    drag.moved = true; field.classList.add('dragging');
+    cam.x -= dx / opts.zoom; cam.y -= dy / opts.zoom; drag.x = e.clientX; drag.y = e.clientY;
+    render();
+});
+field.addEventListener('pointerup', e => {
+    field.classList.remove('dragging');
+    const moved = drag?.moved; drag = null;
+    if (moved) return;
+    // pointer capture 让 target 变成 field，按坐标找真正点到的磁贴。
+    const tile = document.elementFromPoint(e.clientX, e.clientY)?.closest('.tile:not(.is-wall)');
+    focused?.classList.remove('is-focused');
+    focused = tile && tile !== focused ? tile : null;
+    focused?.classList.add('is-focused');
+});
+field.addEventListener('wheel', e => { e.preventDefault(); cam.x += e.deltaX / opts.zoom; cam.y += e.deltaY / opts.zoom; render(); }, { passive: false });
+addEventListener('resize', render);
+
+// ---- 面板 ----
+const panel = document.getElementById('panel'), zoom = document.getElementById('zoom'), zoomOut = document.getElementById('zoomOut');
+function syncPanel() {
+    for (const seg of panel.querySelectorAll('[data-opt]'))
+        for (const b of seg.children) b.classList.toggle('on', opts[seg.dataset.opt] === b.dataset.v);
+    const t = THEMES[opts.theme], root = document.documentElement;
+    root.style.setProperty('--bg-color', t.bg);
+    root.style.setProperty('--text-primary', t.primary);
+    root.style.setProperty('--text-accent', t.accent);
+    root.style.setProperty('--text-secondary', t.secondary);
+    root.style.setProperty('--spine-w', opts.spineW + 'px');
+    root.classList.toggle('is-daylight', t.day);
+    root.classList.toggle('has-tint', opts.tint === 'on');
+    zoom.value = opts.zoom; zoomOut.textContent = Math.round(opts.zoom * 100) + '%';
+}
+panel.addEventListener('click', e => {
+    if (e.target.matches('[data-collapse]')) { panel.classList.toggle('min'); e.target.textContent = panel.classList.contains('min') ? '展开' : '收起'; return; }
+    const b = e.target.closest('.seg button'); if (!b) return;
+    const key = b.parentElement.dataset.opt;
+    opts[key] = b.dataset.v;
+    syncPanel();
+    if (!['theme', 'tint', 'spineW'].includes(key)) rebuild();
+});
+zoom.addEventListener('input', () => {
+    const cx = cam.x + field.clientWidth / opts.zoom / 2, cy = cam.y + field.clientHeight / opts.zoom / 2;
+    opts.zoom = +zoom.value;
+    cam.x = cx - field.clientWidth / opts.zoom / 2; cam.y = cy - field.clientHeight / opts.zoom / 2;
+    syncPanel(); render();
+});
+syncPanel();
+render();
+</script>
+</body>
+</html>

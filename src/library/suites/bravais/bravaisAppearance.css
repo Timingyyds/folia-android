@@ -1,0 +1,123 @@
+/* src/library/suites/bravais/bravaisAppearance.css — 实测反馈 1：Lattice 的墙面外观设置（灯光、叠色）作用到 bravais，
+   以及共享浮层控件（ui/wall 的返回按钮、工具按钮）在 bravais 上的位置补充。2026-10-09 起叠色与熄灯也作用到
+   缝（信息条，见下方「缝」一节）与集合的叠页边（bravaisTileKinds.css）。
+   熄灯本身（每张海报一层 82% 的黑 / 日光下白、正在播放的不熄、熄灯时叠色归零）在 wall.css，与 Lattice 同一份；这里只放
+   bravais 的豁免。叠色不需要补：wall.css 的 has-poster-tint / uses-custom-poster-tint 已经作用在 bravais 根节点上，
+   而窗与全透明档的透着的磁贴根本不画叠色层（BravaisTile），所以叠色从不压在窗上。 */
+
+/* 熄灯时仍然亮着的：聚焦卡（要读、要点按钮）、键盘焦点与悬停的那张（看得见自己在哪）、列表联动与批量选中的那张。
+   正在播放的那张由 wall.css 的 :not(.is-current) 豁免。 */
+.bravais-root.is-lights-out .bravais-tile:hover > .lattice-poster .lattice-poster-lights-out,
+.bravais-root.is-lights-out .lattice-poster.bravais-tile-face:is(.is-expanded, .is-focused, .is-linked, .is-selected) .lattice-poster-lights-out {
+    opacity: 0;
+}
+
+/* 全透明档：墙上的内容磁贴本身就是窗（透出下面的 visualizer），熄灯不往窗上涂黑，只把标题与徽标压暗。
+   部分透明档的窗、实色空画框没有内容，也就没有熄灯层。 */
+.bravais-root.is-lights-out .lattice-poster.bravais-tile-face.is-see-through .lattice-poster-lights-out {
+    opacity: 0;
+}
+
+.bravais-tile-face.is-see-through > :is(.lattice-poster-copy, .lattice-poster-badge) {
+    transition: opacity 260ms ease;
+}
+
+.bravais-root.is-lights-out .bravais-tile:not(:hover) > .lattice-poster.bravais-tile-face.is-see-through:not(.is-current):not(.is-focused):not(.is-linked):not(.is-selected) > :is(.lattice-poster-copy, .lattice-poster-badge) {
+    opacity: 0.28;
+}
+
+:root[data-reduce-motion~='lattice'] .bravais-tile-face.is-see-through > :is(.lattice-poster-copy, .lattice-poster-badge) {
+    transition: none;
+}
+
+/* ---------- 缝（信息条）：叠色与熄灯（2026-10-09，用户要求墙面外观设置同样作用到缝与它上面的文字、按钮） ----------
+   首页窄缝 / 首页书脊、集合 / 歌手页的完整信息条与书脊、面板、表单都在 .bravais-seam 里，边缘标签（.bravais-seam-tab）
+   同一套规则。缝自己画两层：::before 在内容之下（只染纸），::after 在内容之上（染文字与按钮，熄灯时压暗整条）。
+   - 叠色：与海报同一种颜色（默认渐变 / 自定义色）与同一个强度 e（--lattice-poster-tint-effective-opacity，日光 ×0.72）。
+     纸最终被染 e（与磁贴的底一样）；内容层上那一层封顶 0.35（文字最多被染 35%：午夜主题主色字对纸约 6.6:1、
+     副文色约 3:1，日光约 5:1），纸上不够的部分由 ::before 补齐：1 − (1 − e) / (1 − min(e, 0.35))。
+     全透明档的磁贴没有叠色层，缝也不染；熄灯时归零（与磁贴相同）。
+   - 熄灯：实色与部分透明档整条压 60% 黑（日光白），而不是磁贴的 82%——缝是这一页唯一的导航，82% 时竖排标题只剩约
+     1.6:1，找不到它；60% 时标题约 3.4:1，仍明显退到墙后。全透明档的缝是半透明的纸（下面透着 visualizer），与全透明档的
+     磁贴一样不往上涂黑，只把内容压到 0.4（同样是「暗 60%」）。
+   - 「始终透明」的缝（has-clear-seam，任何透光档）按窗处理，与全透明档的缝相同：不染，熄灯只把内容压到 0.4。
+     实色模式的预设（白 / 黑印刷、磨砂、图案）只换纸与墨，两层照旧画在上面（bravaisSeamLooks.css）。
+   - 豁免（缝整条亮起、不染）：悬停在缝上、缝里有键盘焦点或聚焦的输入框（:focus-visible）、弹出的「⋯」菜单、
+     表单态（集合的表单、账户登录 / 确认、首页的搜索框），与磁贴「悬停、聚焦的不熄」同理；账户的平台列表弹在墙上
+     （portal 到缝外），本来就不在这两层之下。 */
+.bravais-root {
+    --bravais-seam-tint: 0;
+    --bravais-seam-dim: 0;
+    --bravais-seam-fade: 1;
+    --bravais-seam-tint-fill: linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--bg-color, #070707) 78%, var(--text-accent, #fd5c47)),
+        color-mix(in srgb, var(--bg-color, #070707) 84%, var(--text-secondary, #6a48ff))
+    );
+    --bravais-seam-dim-fill: #000;
+}
+
+.bravais-root.is-daylight { --bravais-seam-dim-fill: #fff; }
+.bravais-root.uses-custom-poster-tint { --bravais-seam-tint-fill: var(--lattice-poster-tint-color); }
+.bravais-root.has-poster-tint:not(.is-lights-out):not([data-bravais-look='clear']):not(.has-clear-seam) { --bravais-seam-tint: var(--lattice-poster-tint-effective-opacity); }
+.bravais-root.is-lights-out:not([data-bravais-look='clear']):not(.has-clear-seam) { --bravais-seam-dim: 0.6; }
+.bravais-root.is-lights-out:is([data-bravais-look='clear'], .has-clear-seam) { --bravais-seam-fade: 0.4; }
+
+.bravais-seam:is(:hover, :has(:focus-visible), :has([data-bravais-seam-menu]), [data-folia-keyboard-window]),
+.bravais-seam:is([data-bravais-seam='form'], [data-bravais-seam='login'], [data-bravais-seam='confirm'], [data-bravais-seam='search']),
+.bravais-seam-tab:is(:hover, :focus-visible) {
+    --bravais-seam-tint: 0;
+    --bravais-seam-dim: 0;
+    --bravais-seam-fade: 1;
+}
+
+.bravais-seam-tab { isolation: isolate; }
+
+.bravais-seam::before,
+.bravais-seam::after,
+.bravais-seam-tab::before,
+.bravais-seam-tab::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: var(--bravais-seam-tint-fill);
+    opacity: 0;
+    transition: opacity 260ms ease;
+}
+
+.bravais-seam::before,
+.bravais-seam-tab::before {
+    z-index: -1;
+    opacity: calc(1 - (1 - var(--bravais-seam-tint)) / (1 - min(var(--bravais-seam-tint), 0.35)));
+}
+
+/* 内容之上（缝里的「⋯」菜单 z 6 也在它下面；菜单开着时缝豁免，这一层是 0）。 */
+.bravais-seam::after { z-index: 7; }
+.bravais-seam-tab::after { z-index: 1; }
+
+.bravais-seam::after,
+.bravais-seam-tab::after {
+    opacity: max(min(var(--bravais-seam-tint), 0.35), var(--bravais-seam-dim));
+}
+
+.bravais-root.is-lights-out .bravais-seam::after,
+.bravais-root.is-lights-out .bravais-seam-tab::after {
+    background: var(--bravais-seam-dim-fill);
+}
+
+.bravais-seam-body,
+.bravais-seam-tab {
+    opacity: var(--bravais-seam-fade);
+    transition: opacity 260ms ease;
+}
+
+:root[data-reduce-motion~='lattice'] :is(.bravais-seam, .bravais-seam-tab)::before,
+:root[data-reduce-motion~='lattice'] :is(.bravais-seam, .bravais-seam-tab)::after,
+:root[data-reduce-motion~='lattice'] :is(.bravais-seam-body, .bravais-seam-tab) {
+    transition: none;
+}
+
+/* 左上角隐藏式返回（WallBackButton）：在缝之下（缝 5、边缘标签 6）。缝恰好开在左上角时让缝的 ‹ 与面包屑在上面，
+   免得把「回到播放页」叠在「层返回」上误点；墙、暗角（3）与颗粒（2）之上。 */
+.bravais-root .lattice-back { z-index: 4; }

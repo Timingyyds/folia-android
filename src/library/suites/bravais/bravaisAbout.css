@@ -1,0 +1,37 @@
+/* src/library/suites/bravais/bravaisAbout.css
+ * 完整信息条里「关于」这一节（BravaisSeamAbout）：歌手页的「关于艺术家」与集合页的描述共用。像书勒口上的作者简介——
+ * 不加小节标题，层次靠内容：署名一组（头像 + 名字），正文舒展（行高 1.7、比副文稍深），附注最轻。颜色只用缝的主题变量
+ * （currentColor、--bravais-seam-ink-soft），跟着明暗主题与透光档的纸条材质走。
+ * 纵向空间不够时这一节整体可以让位（min-height: 0），让的是正文（.bravais-seam-blurb 的 flex-shrink，至少一行），
+ * 署名与附注不缩。正文是个按钮：规则要带上 .bravais-seam 才压得住 bravais.css 里统一的按钮字体。 */
+
+.bravais-seam-about {
+    display: flex;
+    flex: 0 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 10px;
+    margin: 2px 0 0;
+}
+
+.bravais-seam .bravais-seam-about-text {
+    color: color-mix(in srgb, var(--text-primary, #f7f4ee) 78%, transparent);
+    font-size: 12.5px;
+    line-height: 1.7;
+    letter-spacing: 0.01em;
+}
+
+.bravais-seam-about-note {
+    flex: none;
+    margin: 0;
+    color: var(--bravais-seam-ink-soft);
+    font-size: 11px;
+    line-height: 1.5;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+}
+
+/* fb10：集合页的收藏星标挪进了按钮行，描述下面空出一行（36px + 间距，约两行正文），描述收起时多显示两行。 */
+.bravais-seam-about[data-bravais-seam-about='collection'] { --bravais-blurb-lines: 6; }

@@ -1,0 +1,470 @@
+/* src/ui/wall/WallToolsButton.css — 墙面右下角工具按钮与锚定玻璃面板（WallToolsButton），Lattice 与 bravais 共用。
+   原来是 ui/app/lattice/LatticeFocusButton.css，整份搬来，类名沿用 .lattice-tools*（测试与 Ponder 依赖它们）。
+   紧凑档：面板 296px、行 38px、快捷格 40px 纯图标。 */
+
+.lattice-tools {
+    /* 面板与上方队列浮岛共用的宽度：两块玻璃左右对齐。 */
+    --wall-tools-panel-width: min(296px, calc(100vw - 32px));
+    /* stack 顶部要让出的高度：Electron 自绘标题栏（AppShell 顶上那条 h-8 = 32px，z-[9999]、可拖拽区，会压住并吃掉
+       浮岛头部按钮的点击）+ 16px 间距。标题栏高度没有现成的 CSS 变量，这里写死并与 AppShell 的 h-8 对应；
+       浏览器与壁纸模式没有标题栏，多留 32px 无妨。 */
+    --wall-tools-top-reserve: 48px;
+    /* 面板里除帮助列表（ul）以外的高度上限（快捷排、音量、两面墙各自的条目、叠色、灯光行、帮助区的边距与 ul 外的间隔），
+       浮岛打开时给帮助列表算预算用；两面墙都是「小标题 + 一行」，Lattice 实测 267px，留些余量。 */
+    --wall-tools-panel-chrome: 300px;
+    position: absolute;
+    right: 24px;
+    bottom: 24px;
+    z-index: 30;
+    color: var(--text-primary, #f7f4ee);
+}
+
+/* App 的 dock（WallToolsDock）不接指针，只有按钮与面板接（翻牌交接时两面墙共用这一颗）。 */
+.wall-tools-dock .lattice-tools { pointer-events: auto; }
+
+/* 按钮上方的一列：面板与队列浮岛在里面，从下往上排（column-reverse：DOM 里面板在前、浮岛在后，Tab 顺序是
+   面板 → 浮岛 → 按钮，视觉上浮岛在面板上方）；定位在这一层，面板自己不 absolute。
+   max-height 是按钮上方到窗口顶的距离，顶上让出 --wall-tools-top-reserve（标题栏 + 间距）：窗口矮时只压缩浮岛
+   （它 flex-shrink、最小 112px），面板不缩；浮岛压到最小还放不下时由帮助列表让（见文件末尾的预算）。
+   --wall-tools-bottom 是按钮此刻的底距（WallToolsSurface 随底栏抬升量写到根节点上）。 */
+.lattice-tools-stack {
+    position: absolute;
+    right: 0;
+    bottom: 64px;
+    display: flex;
+    max-height: calc(100vh - var(--wall-tools-bottom, 24px) - 64px - var(--wall-tools-top-reserve));
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.lattice-tools-panel {
+    display: flex;
+    flex: none;
+    width: var(--wall-tools-panel-width);
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px;
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 8%);
+    border-radius: 24px;
+    background: rgb(0 0 0 / 40%);
+    box-shadow: 0 24px 64px rgb(0 0 0 / 42%);
+    backdrop-filter: blur(24px);
+}
+
+.lattice-tools.is-daylight .lattice-tools-panel {
+    border-color: rgb(0 0 0 / 7%);
+    background: rgb(255 255 255 / 62%);
+    box-shadow: 0 24px 64px rgb(42 35 27 / 18%);
+}
+
+.lattice-tools-action {
+    display: flex;
+    width: 100%;
+    min-height: 38px;
+    align-items: center;
+    gap: 11px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.lattice-tools-action:hover,
+.lattice-tools-action:focus-visible {
+    background: rgb(255 255 255 / 10%);
+}
+
+.lattice-tools.is-daylight .lattice-tools-action:hover,
+.lattice-tools.is-daylight .lattice-tools-action:focus-visible {
+    background: rgb(0 0 0 / 7%);
+}
+
+.lattice-tools-action:focus-visible,
+.lattice-tools button:focus-visible {
+    outline: 2px solid var(--text-accent, currentColor);
+    outline-offset: 2px;
+}
+
+.lattice-tools-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.lattice-tools-action:disabled:hover { background: transparent; }
+.lattice-tools-action svg { width: 17px; height: 17px; flex: 0 0 auto; }
+
+.lattice-tools-action kbd {
+    margin-left: auto;
+    padding: 1px 6px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.42;
+}
+
+/* 条目右侧的当前值（bravais 的透光档位）：与快捷键同位置，但不是按键，所以不画框。 */
+.lattice-tools-value {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.6;
+    white-space: nowrap;
+}
+
+.lattice-tools-toggle {
+    width: 30px;
+    height: 18px;
+    margin-left: auto;
+    padding: 2px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    opacity: 0.42;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.lattice-tools-toggle > span {
+    display: block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: transform 160ms ease;
+}
+
+.lattice-tools-toggle.is-on {
+    background: var(--text-accent, currentColor);
+    opacity: 1;
+}
+
+/* 强调色上的旋钮 / 文字用主题底色：缺省主题的强调色就是正文色，用正文色会白底白字。
+   现在读 --text-on-accent（buildAppStyle 从底色与正文色里挑与强调色对比度更高的那个：日光缺省主题里底色画在橙色上
+   只有约 3.3:1，那时取正文色）；没有这个变量的地方退回底色。 */
+.lattice-tools-toggle.is-on > span {
+    color: var(--text-on-accent, var(--bg-color, #09090b));
+    transform: translateX(12px);
+}
+
+.lattice-tools-help-section {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid rgb(255 255 255 / 10%);
+}
+
+.lattice-tools-lights-toggle {
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-radius: 999px;
+    color: inherit;
+    background: rgb(255 255 255 / 6%);
+    cursor: pointer;
+}
+
+.lattice-tools-lights-toggle span {
+    min-width: 44px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    color: color-mix(in srgb, currentColor 58%, transparent);
+    font-size: 10.5px;
+    font-weight: 650;
+    text-align: center;
+    transition: color 160ms ease, background-color 160ms ease;
+}
+
+.lattice-tools-lights-toggle span.is-active {
+    color: var(--text-on-accent, var(--bg-color, #09090b));
+    background: var(--text-accent, currentColor);
+}
+
+.lattice-tools.is-daylight .lattice-tools-lights-toggle {
+    background: rgb(0 0 0 / 5%);
+}
+
+.lattice-tools.is-daylight .lattice-tools-help-section {
+    border-top-color: rgb(0 0 0 / 9%);
+}
+
+.lattice-tools-help-trigger {
+    width: 32px;
+    min-height: 32px;
+    justify-content: center;
+    align-self: flex-end;
+    padding: 0;
+}
+
+.lattice-tools-help {
+    flex-basis: 100%;
+    margin-top: 6px;
+    overflow: hidden;
+}
+
+.lattice-tools-help ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+    padding: 7px 12px;
+    border-radius: 14px;
+    background: rgb(255 255 255 / 6%);
+    list-style: none;
+}
+
+.lattice-tools.is-daylight .lattice-tools-help ul {
+    background: rgb(0 0 0 / 5%);
+}
+
+.lattice-tools-help li {
+    display: flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: color-mix(in srgb, currentColor 76%, transparent);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.lattice-tools-help li + li {
+    border-top: 1px solid rgb(255 255 255 / 7%);
+}
+
+.lattice-tools.is-daylight .lattice-tools-help li + li {
+    border-top-color: rgb(0 0 0 / 6%);
+}
+
+.lattice-tools-help li > span:first-child {
+    min-width: 0;
+}
+
+.lattice-tools-help li > kbd,
+.lattice-tools-help-key kbd {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border: 1px solid color-mix(in srgb, currentColor 36%, transparent);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.lattice-tools-help-key {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+}
+
+/* —— 快捷排、音量滑条、分组小标题（两面墙都有）—— */
+
+/* 顶部一排纯图标快捷格：固定 6 列（缺的格子跳过，剩下的靠左），名字与按键在 title / aria 里，悬停与条目同一种底。 */
+.lattice-tools-quick {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.lattice-tools-quick-action {
+    display: grid;
+    min-width: 0;
+    height: 40px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 6%);
+    color: inherit;
+    cursor: pointer;
+    transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.lattice-tools-quick-action:hover,
+.lattice-tools-quick-action:focus-visible {
+    background: rgb(255 255 255 / 13%);
+}
+
+.lattice-tools.is-daylight .lattice-tools-quick-action { background: rgb(0 0 0 / 5%); }
+.lattice-tools.is-daylight .lattice-tools-quick-action:hover,
+.lattice-tools.is-daylight .lattice-tools-quick-action:focus-visible { background: rgb(0 0 0 / 10%); }
+
+.lattice-tools-quick-action svg { width: 18px; height: 18px; flex: 0 0 auto; }
+
+.lattice-tools-quick-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.lattice-tools-quick-action:disabled:hover { background: rgb(255 255 255 / 6%); }
+.lattice-tools.is-daylight .lattice-tools-quick-action:disabled:hover { background: rgb(0 0 0 / 5%); }
+
+/* 进行中（生成主题）：强调色图标轻轻呼吸。 */
+.lattice-tools-quick-action.is-busy { opacity: 1; }
+.lattice-tools-quick-action.is-busy svg {
+    color: var(--text-accent, currentColor);
+    animation: lattice-tools-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes lattice-tools-busy {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lattice-tools-quick-action.is-busy svg { animation: none; }
+}
+
+/* 滑条一行（音量）：左侧图标（可点：静音）、轨道、右侧数值，一块浅底。 */
+.lattice-tools-slider {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px 0 4px;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 6%);
+}
+
+.lattice-tools.is-daylight .lattice-tools-slider { background: rgb(0 0 0 / 5%); }
+
+.lattice-tools-slider-icon {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+}
+
+button.lattice-tools-slider-icon { cursor: pointer; transition: background-color 160ms ease; }
+button.lattice-tools-slider-icon:hover { background: rgb(255 255 255 / 10%); }
+.lattice-tools.is-daylight button.lattice-tools-slider-icon:hover { background: rgb(0 0 0 / 7%); }
+.lattice-tools-slider-icon svg { width: 17px; height: 17px; }
+button.lattice-tools-slider-icon[aria-pressed="true"] { color: var(--text-accent, currentColor); }
+
+.lattice-tools-slider input[type="range"] {
+    --wall-tools-slider-track: color-mix(in srgb, currentColor 18%, transparent);
+    min-width: 0;
+    height: 22px;
+    flex: 1 1 auto;
+    margin: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    appearance: none;
+}
+
+.lattice-tools-slider input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(to right,
+        var(--text-accent, currentColor) var(--wall-tools-slider-fill, 0%),
+        var(--wall-tools-slider-track) var(--wall-tools-slider-fill, 0%));
+}
+
+.lattice-tools-slider input[type="range"]::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--text-primary, #f7f4ee);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 22%), 0 2px 6px rgb(0 0 0 / 30%);
+    appearance: none;
+    transition: transform 120ms ease;
+}
+
+.lattice-tools-slider input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.18); }
+
+.lattice-tools-slider input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--wall-tools-slider-track);
+}
+
+.lattice-tools-slider input[type="range"]::-moz-range-progress {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--text-accent, currentColor);
+}
+
+.lattice-tools-slider input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--text-primary, #f7f4ee);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 22%), 0 2px 6px rgb(0 0 0 / 30%);
+}
+
+.lattice-tools-slider input[type="range"]:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid var(--text-accent, currentColor);
+    outline-offset: 3px;
+}
+
+.lattice-tools-slider-value {
+    width: 38px;
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    opacity: 0.66;
+    text-align: right;
+}
+
+/* 分组小标题：一道发丝线 + 小号字，之后的几行属于它。 */
+.lattice-tools-heading {
+    margin-top: 4px;
+    padding: 7px 12px 1px;
+    border-top: 1px solid rgb(255 255 255 / 10%);
+    color: color-mix(in srgb, currentColor 52%, transparent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.lattice-tools.is-daylight .lattice-tools-heading { border-top-color: rgb(0 0 0 / 9%); }
+
+/* 带快捷动作的面板更高：帮助展开时只让帮助列表自己滚，面板不顶出窗口。 */
+.lattice-tools-panel.has-quick-actions .lattice-tools-help ul {
+    max-height: max(150px, calc(100vh - 600px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* 队列浮岛也开着时，帮助列表的预算把浮岛算进去：stack 的高度上限减去面板其余部分、间隔与浮岛的最小高度（112px），
+   剩下的才给帮助列表。窗口够高时仍是上面那条上限；不够时先压浮岛（flex-shrink 到 112px），再压帮助列表，
+   保证帮助展开 + 浮岛打开时整体不出视口（帮助列表最少留 48px，窗口再矮就只能让它自己滚）。 */
+.lattice-tools-stack.has-queue-island .lattice-tools-panel.has-quick-actions .lattice-tools-help ul {
+    max-height: min(
+        max(150px, calc(100vh - 600px)),
+        max(48px, calc(100vh - var(--wall-tools-bottom, 24px) - 64px - var(--wall-tools-top-reserve)
+            - var(--wall-tools-panel-chrome) - 8px - 112px))
+    );
+}
+
+@media (max-width: 640px) {
+    .lattice-tools { right: 16px; bottom: 16px; }
+}

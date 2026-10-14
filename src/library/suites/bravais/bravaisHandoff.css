@@ -1,0 +1,40 @@
+/* src/library/suites/bravais/bravaisHandoff.css — 翻牌交接（资料库墙 ↔ Lattice，设计稿 §7「进入队列」）期间 bravais 根节点的样子。
+   阶段与角色来自 useBravaisWallHandoff（根节点的 data-wall-handoff* 属性）；翻牌本身是 WAAPI，只转磁贴的内容层。 */
+
+/* 交接由动画决定，翻完才交给接手的那一面：期间墙不接指针（悬停、拖动都不发生）。 */
+.bravais-root[data-wall-handoff] { pointer-events: none; }
+
+/* 回来时、开翻之前：磁贴全部藏着（开翻那一刻换成 WAAPI 的 fill backwards，侧立等到自己的时刻再翻进来）。 */
+.bravais-root[data-wall-handoff-hold] .bravais-tile-face { visibility: hidden; }
+
+/* 两面墙叠着时颗粒与暗角只留上面那层（Lattice）的一份，免得边缘压暗两遍。瞬间切换：两份是同一套设置，看不出接缝。 */
+.bravais-root[data-wall-handoff-overlays='off']::before,
+.bravais-root[data-wall-handoff-overlays='off']::after { opacity: 0; }
+
+/* 关窗：透光档墙面之下的实色（与实色档的根节点同一份底色与两团光晕）。在世界层之下、底板之下，所以窗位与全透明档的
+   磁贴在翻牌前就成了实色；缝隙本来就是底板的实色。 */
+.bravais-handoff-veil {
+    position: absolute;
+    inset: 0;
+    background: var(--bravais-wall-surface);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+}
+
+.bravais-handoff-veil[data-veil='on'] { opacity: 1; }
+
+:root[data-reduce-motion~='lattice'] .bravais-handoff-veil { transition: none; }
+
+/* 窗位自己那层很淡的光晕随 veil 一起淡掉 / 淡回：关着的窗读起来就是墙面，不是一块带光圈的暗格。 */
+.bravais-root.is-see-through .lattice-poster.bravais-tile-face.is-window { transition: opacity 200ms ease; }
+.bravais-root[data-wall-handoff-veil='on'] .lattice-poster.bravais-tile-face.is-window { opacity: 0; }
+:root[data-reduce-motion~='lattice'] .bravais-root .lattice-poster.bravais-tile-face.is-window { transition: none; }
+
+/* 折叠等级的悬浮按钮、左上角隐藏式返回：交接期间收起来（缝本身随开口补间合上 / 张开）。 */
+.bravais-root[data-wall-handoff] .bravais-seam-tab,
+.bravais-root[data-wall-handoff] .lattice-back {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+}

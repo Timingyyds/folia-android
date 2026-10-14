@@ -1,0 +1,449 @@
+/* src/library/suites/bravais/bravaisAlbumPoster.css
+ * 专辑海报（BravaisSeamAlbumPoster），凝彩的视觉语言、参考稿 album.png 竖过来：上半浅色点阵纸（封面斜贴、胶带、墨色硬
+ * 阴影、竖排碎字），一道斜线网纹，下半深色块（小标签、奶油色立体大字、强调色下划线、元信息、按钮、描边水印字）。
+ * 颜色是 stage 根节点上的 --bravais-album-*（从封面取，bravaisPosterPalette）；没取到时是这里的米色与藏青。
+ * 构图（斜线两端的高度、封面角度、胶带、下划线、放大那个词的错位）是 BravaisSeamAlbumPoster 写的变量。
+ * 与歌手海报共用 bravaisPoster.css 的骨架（安全区缩放、顶栏、按钮），这里只换颜色与画面。 */
+
+.bravais-root {
+    --bravais-album-paper-fallback: #efe9dc;
+    --bravais-album-ink-fallback: #141210;
+    --bravais-album-block-fallback: #22305f;
+    --bravais-album-accent-fallback: #e4462b;
+}
+
+.bravais-album-poster {
+    --album-paper: var(--bravais-album-paper, var(--bravais-album-paper-fallback));
+    --album-ink: var(--bravais-album-ink, var(--bravais-album-ink-fallback));
+    --album-block: var(--bravais-album-block, var(--bravais-album-block-fallback));
+    --album-accent: var(--bravais-album-accent, var(--bravais-album-accent-fallback));
+    --album-title: var(--bravais-album-title, #ecdcae);
+    --bravais-poster-ink: var(--album-paper);
+    --bravais-poster-pad: 40px;
+    --text-primary: var(--album-paper);
+    --text-secondary: color-mix(in srgb, var(--album-paper) 74%, transparent);
+    --bravais-seam-ink-soft: color-mix(in srgb, var(--album-paper) 62%, transparent);
+    --bravais-blurb-lines: 1;
+    --album-title-size: min(150px, 15cqh, calc((100cqw - 2 * var(--bravais-poster-pad)) / (var(--bravais-album-title-columns, 3) + 1.4)));
+    color: var(--album-paper);
+}
+
+/* 缝的底（倾斜时露出来的上下两截）：上面是纸、下面是色块，与海报自己的纸和色块接上。按缝里此刻画着的是不是专辑海报
+ * 认（:has），不按根节点的 has-album-wall——换层时缝的内容晚一拍才换，那一拍里底色要跟着内容走。 */
+.bravais-seam[data-bravais-seam="poster"]:has(> .bravais-seam-content .bravais-album-poster) {
+    background: linear-gradient(
+        180deg,
+        var(--bravais-album-paper, var(--bravais-album-paper-fallback)) calc(var(--bravais-poster-bleed) + 44vh),
+        var(--bravais-album-block, var(--bravais-album-block-fallback)) calc(var(--bravais-poster-bleed) + 44vh)
+    );
+}
+
+/* ---- 底子（不缩） ---- */
+.bravais-album-poster .bravais-poster-ground {
+    background: var(--album-block);
+}
+
+/* 点阵纸往上多铺一个海报高度：倾斜时缝上方的出血也是这张纸（带点阵），看不出海报的上边。 */
+.bravais-album-paper {
+    position: absolute;
+    top: -100cqh;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background-color: var(--album-paper);
+    background-image: radial-gradient(color-mix(in srgb, var(--album-ink) 20%, transparent) 1px, transparent 1.3px);
+    background-size: 9px 9px;
+    clip-path: polygon(
+        0 0,
+        100% 0,
+        100% calc(100cqh + var(--bravais-album-divider-right)),
+        0 calc(100cqh + var(--bravais-album-divider-left))
+    );
+}
+
+.bravais-album-hatch {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(-58deg, var(--album-ink) 0 2px, transparent 2px 9px);
+    clip-path: polygon(
+        0 var(--bravais-album-divider-left),
+        100% var(--bravais-album-divider-right),
+        100% calc(var(--bravais-album-divider-right) + 3.2cqh),
+        0 calc(var(--bravais-album-divider-left) + 3.2cqh)
+    );
+}
+
+.bravais-album-dots {
+    position: absolute;
+    right: -8%;
+    bottom: 6%;
+    width: 64%;
+    height: 34%;
+    background-image: radial-gradient(color-mix(in srgb, var(--album-paper) 18%, transparent) 1.4px, transparent 1.8px);
+    background-size: 10px 10px;
+    mask-image: radial-gradient(closest-side, #000 40%, transparent);
+}
+
+.bravais-album-ghost {
+    position: absolute;
+    bottom: -0.12em;
+    font-size: min(420px, 52cqh);
+    font-weight: 900;
+    line-height: 1;
+    color: transparent;
+    -webkit-text-stroke: 1.5px color-mix(in srgb, var(--album-paper) 16%, transparent);
+    white-space: nowrap;
+}
+
+.bravais-album-ghost[data-side="right"] { right: -0.18em; }
+.bravais-album-ghost[data-side="left"] { left: -0.12em; }
+
+/* ---- 文字、封面与按钮（倾斜时缩进安全区） ---- */
+.bravais-album-poster .bravais-poster-top {
+    --text-primary: var(--album-ink);
+    --text-secondary: color-mix(in srgb, var(--album-ink) 70%, transparent);
+    --bravais-seam-ink-soft: color-mix(in srgb, var(--album-ink) 72%, transparent);
+    color: var(--album-ink);
+}
+
+.bravais-album-poster .bravais-poster-top .bravais-seam-back {
+    background: color-mix(in srgb, var(--album-ink) 8%, transparent);
+    color: var(--album-ink);
+}
+
+.bravais-album-poster .bravais-poster-filter {
+    border-color: var(--album-ink);
+    background: transparent;
+    color: var(--album-ink);
+}
+
+.bravais-album-poster .bravais-poster-filter:hover,
+.bravais-album-poster .bravais-poster-filter:focus-visible {
+    background: color-mix(in srgb, var(--album-ink) 10%, transparent);
+}
+
+.bravais-album-stage {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    padding: 18px var(--bravais-poster-pad) 0 calc(var(--bravais-poster-pad) + 18px);
+}
+
+.bravais-album-cover {
+    position: relative;
+    flex: none;
+    width: min(56cqw, 33cqh);
+    aspect-ratio: 1;
+    margin: 0;
+    transform: rotate(var(--bravais-album-cover-deg, -4deg));
+}
+
+.bravais-album-cover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translate(12px, 12px);
+    background: var(--album-ink);
+}
+
+.bravais-album-cover img,
+.bravais-album-cover-empty {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: var(--album-block);
+}
+
+.bravais-album-tape {
+    position: absolute;
+    top: -12px;
+    left: var(--bravais-album-tape-x, 40%);
+    width: 30%;
+    height: 24px;
+    background: rgba(214, 212, 204, 0.8);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    transform: translateX(-50%) rotate(var(--bravais-album-tape-deg, 3deg));
+}
+
+.bravais-album-scrap {
+    position: absolute;
+    top: 24px;
+    right: calc(var(--bravais-poster-pad) - 10px);
+    max-height: 70%;
+    overflow: hidden;
+    writing-mode: vertical-rl;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.3em;
+    color: var(--album-ink);
+    opacity: 0.85;
+}
+
+.bravais-album-title-block {
+    position: relative;
+    margin-top: 28px;
+    padding: 0 var(--bravais-poster-pad);
+}
+
+.bravais-album-kicker {
+    display: inline-block;
+    padding: 6px 12px;
+    background: var(--album-ink);
+    color: var(--album-paper);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    transform: rotate(-2deg);
+}
+
+.bravais-album-title {
+    margin: 6px 0 0;
+    font-size: var(--album-title-size);
+    font-weight: 900;
+    line-height: 1.02;
+    letter-spacing: -0.02em;
+    color: var(--album-title);
+    overflow-wrap: anywhere;
+    text-shadow:
+        0.025em 0.025em 0 var(--bravais-album-extrude-1, #b9a679),
+        0.05em 0.05em 0 var(--bravais-album-extrude-2, #8a7c5b),
+        0.075em 0.075em 0 var(--bravais-album-extrude-3, #4a4560),
+        0.1em 0.1em 0 var(--bravais-album-extrude-4, #18224a);
+}
+
+.bravais-album-title .is-hero {
+    display: inline-block;
+    font-size: 0.72em;
+    transform: translate(var(--bravais-album-hero-x, 0.08em), var(--bravais-album-hero-y, 0.16em)) rotate(var(--bravais-album-hero-deg, 4deg));
+}
+
+.bravais-album-underline {
+    width: var(--bravais-album-underline, 50%);
+    height: 9px;
+    margin-top: 14px;
+    background: var(--album-accent);
+    transform: rotate(-1deg);
+}
+
+.bravais-album-bottom {
+    margin-top: 20px;
+    gap: 12px;
+}
+
+.bravais-album-facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.bravais-album-facts > * + *::before {
+    content: "·";
+    margin-right: 14px;
+    opacity: 0.5;
+}
+
+.bravais-album-artist {
+    font-size: 19px;
+    font-weight: 900;
+    border-bottom: 2px solid currentColor;
+}
+
+.bravais-album-poster .bravais-poster-meta {
+    color: inherit;
+    font-size: inherit;
+}
+
+.bravais-album-poster .bravais-poster-button {
+    border: 2px solid var(--album-ink);
+    background: var(--album-paper);
+    color: var(--album-ink);
+    box-shadow: 5px 5px 0 var(--album-ink);
+}
+
+.bravais-album-poster .bravais-poster-button:not(.is-primary):hover {
+    background: color-mix(in srgb, var(--album-paper) 86%, var(--album-ink));
+}
+
+.bravais-album-poster .bravais-poster-button.is-primary {
+    border-color: var(--album-ink);
+    background: var(--album-accent);
+    color: var(--album-paper);
+    box-shadow: 5px 5px 0 var(--album-ink);
+}
+
+.bravais-album-poster .bravais-poster-actions .bravais-seam-star,
+.bravais-album-poster .bravais-poster-actions .bravais-seam-menu-trigger {
+    color: var(--album-paper);
+}
+
+/* ---- 专辑墙：拼贴与碎片（BravaisTile 的 .bravais-tile-art，bravaisAlbumWall） ----
+ * 只在专辑海报在场时画；其余时候照常是整张封面（内容层自己的背景）。
+ * 拼贴：原色，整面墙拼成封面。碎片：海报的双色调（暗处是色块色、亮处是强调色）加网点；悬停、键盘焦点、正在播放时还原。 */
+.bravais-tile-art {
+    display: none;
+}
+
+/* 拼贴的磁贴不垫自己的整张封面：拼贴用的是大图，到得比磁贴自己那档晚，垫着就会先闪一下每格一样的封面再变成拼贴。
+ * 大图到之前拼贴层自己垫着一张糊的（海报封面那档放大，BravaisTile 的 artStandIn，--bravais-art-image 的第二层）。
+ * 内联的 backgroundImage 只能用 !important 压；聚焦卡不画拼贴（没有 data-bravais-art），照常是整张封面。 */
+.bravais-root.has-album-wall .bravais-tile-face[data-bravais-art="mosaic"] {
+    background-image: none !important;
+}
+
+.bravais-root.has-album-wall .bravais-tile-art {
+    position: absolute;
+    inset: 0;
+    display: block;
+    overflow: hidden;
+    isolation: isolate;
+    pointer-events: none;
+}
+
+.bravais-root.has-album-wall .bravais-tile-art > i {
+    position: absolute;
+    inset: 0;
+    background-image: var(--bravais-art-image);
+    background-size: var(--bravais-art-size) var(--bravais-art-size);
+    background-position: var(--bravais-art-x) var(--bravais-art-y);
+    background-repeat: repeat;
+    transition: filter 260ms ease, opacity 260ms ease;
+}
+
+.bravais-root.has-album-wall .bravais-tile-art[data-bravais-art="shard"] {
+    background-color: var(--bravais-album-accent, var(--bravais-album-accent-fallback));
+}
+
+.bravais-root.has-album-wall .bravais-tile-art[data-bravais-art="shard"] > i {
+    filter: grayscale(1) contrast(2.2) brightness(1.3);
+    mix-blend-mode: multiply;
+}
+
+.bravais-root.has-album-wall .bravais-tile-art[data-bravais-art="shard"]::before,
+.bravais-root.has-album-wall .bravais-tile-art[data-bravais-art="shard"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    transition: opacity 260ms ease;
+}
+
+/* 暗处抬到色块色。 */
+.bravais-root.has-album-wall .bravais-tile-art[data-bravais-art="shard"]::before {
+    background: var(--bravais-album-block, var(--bravais-album-block-fallback));
+    mix-blend-mode: lighten;
+}
+
+/* 网点。 */
+.bravais-root.has-album-wall .bravais-tile-art[data-bravais-art="shard"]::after {
+    background-image: radial-gradient(rgb(0 0 0 / 24%) 1.1px, transparent 1.5px);
+    background-size: 6px 6px;
+    mix-blend-mode: multiply;
+}
+
+.bravais-root.has-album-wall .bravais-tile:hover .bravais-tile-art[data-bravais-art="shard"] > i,
+.bravais-root.has-album-wall .bravais-tile.is-focused .bravais-tile-art[data-bravais-art="shard"] > i,
+.bravais-root.has-album-wall .bravais-tile-face.is-current .bravais-tile-art[data-bravais-art="shard"] > i {
+    filter: none;
+    mix-blend-mode: normal;
+}
+
+.bravais-root.has-album-wall .bravais-tile:hover .bravais-tile-art[data-bravais-art="shard"]::before,
+.bravais-root.has-album-wall .bravais-tile:hover .bravais-tile-art[data-bravais-art="shard"]::after,
+.bravais-root.has-album-wall .bravais-tile.is-focused .bravais-tile-art[data-bravais-art="shard"]::before,
+.bravais-root.has-album-wall .bravais-tile.is-focused .bravais-tile-art[data-bravais-art="shard"]::after,
+.bravais-root.has-album-wall .bravais-tile-face.is-current .bravais-tile-art[data-bravais-art="shard"]::before,
+.bravais-root.has-album-wall .bravais-tile-face.is-current .bravais-tile-art[data-bravais-art="shard"]::after {
+    opacity: 0;
+}
+
+/* ---- 入场（挂载时放一次） ----
+ * 0       纸从整张收到斜边，露出下面的色块
+ * 0.12s   封面落下贴上
+ * 0.3s 起 标题每个词从不同方向拼上来（每词错开 70ms），立体残影晚半拍
+ * 0.5s 起 小标签、下划线（从左拉出）、信息、简介、按钮依次浮上来
+ * 0.8s    胶带啪地贴上；碎字与网纹淡入
+ * 降低动态效果：整张只淡入。 */
+@keyframes bravais-album-paper-in {
+    from { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+}
+@keyframes bravais-album-fade-in {
+    from { opacity: 0; }
+}
+@keyframes bravais-album-cover-in {
+    from { opacity: 0; translate: 0 -28px; scale: 1.14; }
+    60% { opacity: 1; }
+}
+@keyframes bravais-album-tape-in {
+    from { opacity: 0; scale: 1.7; }
+    70% { opacity: 1; scale: 0.94; }
+}
+@keyframes bravais-album-word-in {
+    from { opacity: 0; translate: var(--word-from-x) var(--word-from-y); rotate: var(--word-from-deg); }
+}
+@keyframes bravais-album-extrude-in {
+    from { text-shadow: 0 0 0 transparent, 0 0 0 transparent, 0 0 0 transparent, 0 0 0 transparent; }
+}
+@keyframes bravais-album-rise-in {
+    from { opacity: 0; translate: 0 14px; }
+}
+@keyframes bravais-album-underline-in {
+    from { scale: 0 1; }
+}
+
+.bravais-album-paper { animation: bravais-album-paper-in 620ms cubic-bezier(.65, 0, .25, 1) both; }
+.bravais-album-hatch { animation: bravais-album-fade-in 360ms ease-out 480ms both; }
+.bravais-album-dots,
+.bravais-album-ghost { animation: bravais-album-fade-in 600ms ease-out 520ms both; }
+.bravais-album-cover { animation: bravais-album-cover-in 560ms cubic-bezier(.2, .9, .3, 1.08) 120ms both; }
+.bravais-album-tape { animation: bravais-album-tape-in 300ms cubic-bezier(.3, .7, .3, 1.2) 820ms both; }
+.bravais-album-scrap { animation: bravais-album-fade-in 500ms ease-out 700ms both; }
+.bravais-album-kicker { animation: bravais-album-rise-in 380ms cubic-bezier(.2, .8, .3, 1) 420ms both; }
+
+.bravais-album-title .bravais-album-word {
+    display: inline-block;
+    --word-from-x: -0.5em;
+    --word-from-y: 0.35em;
+    --word-from-deg: -8deg;
+    animation: bravais-album-word-in 520ms cubic-bezier(.2, .9, .3, 1.1) calc(300ms + var(--bravais-album-word-index, 0) * 70ms) both;
+}
+.bravais-album-title .bravais-album-word[data-space] { display: inline; animation: none; }
+.bravais-album-title .bravais-album-word:nth-child(3n + 2) { --word-from-x: 0.4em; --word-from-y: -0.45em; --word-from-deg: 7deg; }
+.bravais-album-title .bravais-album-word:nth-child(3n) { --word-from-x: 0; --word-from-y: 0.6em; --word-from-deg: 4deg; }
+.bravais-album-title { animation: bravais-album-extrude-in 420ms ease-out 640ms both; }
+
+.bravais-album-underline {
+    transform-origin: 0 50%;
+    animation: bravais-album-underline-in 420ms cubic-bezier(.6, 0, .2, 1) 620ms both;
+}
+.bravais-album-bottom > * { animation: bravais-album-rise-in 420ms cubic-bezier(.2, .8, .3, 1) both; }
+.bravais-album-bottom > :nth-child(1) { animation-delay: 560ms; }
+.bravais-album-bottom > :nth-child(2) { animation-delay: 620ms; }
+.bravais-album-bottom > :nth-child(3) { animation-delay: 680ms; }
+.bravais-album-bottom > :nth-child(n + 4) { animation-delay: 740ms; }
+.bravais-album-poster .bravais-poster-top { animation: bravais-album-fade-in 400ms ease-out 200ms both; }
+
+:root[data-reduce-motion~='lattice'] .bravais-album-poster,
+:root[data-reduce-motion~='lattice'] .bravais-album-poster * {
+    animation: none !important;
+}
+:root[data-reduce-motion~='lattice'] .bravais-album-poster {
+    animation: bravais-album-fade-in 180ms ease-out both !important;
+}
+
+/* 封面从墙上飞过来：飞的时候自己的先藏着，落地同一帧露出；两种状态都不放「落下」的入场（不然落地后又播一遍）。 */
+.bravais-album-cover[data-flight] {
+    animation: none;
+}
+
+.bravais-album-cover[data-flight="pending"] {
+    visibility: hidden;
+}

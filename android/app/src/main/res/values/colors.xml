@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches capacitor.config.json backgroundColor so an exposed window
+         area on tablets never shows the platform default white. -->
+    <color name="foliaWindowBackground">#09090B</color>
+</resources>
