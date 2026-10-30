@@ -3,7 +3,7 @@ import { selectDisplaySong, usePlaybackStore } from '../stores/usePlaybackStore'
 import { useThemeSettingsStore } from '../stores/useThemeSettingsStore';
 import { useVisualizerSettingsStore } from '../stores/useVisualizerSettingsStore';
 import { liveBeatEffects, liveBeatEffectStrength, visualizerWantsBeats, visualizerWantsDrumHits } from '../components/visualizer/beatClockTargets';
-import { BEAT_EFFECT_IDS, resolveBeatEffectSetting, smartBeatMayAnalyse } from '../services/beatFx/beatEffects';
+import { anyDrumBeatEffectOn, resolveBeatEffectSetting, smartBeatMayAnalyse } from '../services/beatFx/beatEffects';
 import { beginBeatFxTrack, getBeatFxHeard, setBeatFxEvents, setBeatFxIntensities, setBeatFxLiveEffects, stopBeatFx } from '../services/beatFx/beatFxLive';
 import { loadBeatFxTrackBeats, loadBeatFxTrackDrums } from '../services/beatFx/beatFxSource';
 import { getPlaybackAnalysisKey, getPlaybackAnalysisTarget } from '../services/playbackRecovery/representationRegistry';
@@ -52,14 +52,14 @@ export function useBeatFxTrack(): boolean {
     // Asked again when htdemucs_gpu's answer arrives (the startup check; the file ships with the app).
     const drumModel = useSyncExternalStore(subscribeModelAvailability, modelsPresent).htdemucs_gpu;
 
-    // Whether a track's drum hits may still be separated, on any picture (时计 may come on later): only
+    // Whether a track's drum hits may still be separated, on any picture (时计 or 凝彩 may come on later): only
     // then are the drums automix's segments leave behind kept (services/analysis/stemRange.ts), and only
     // for a track whose hits are not all in yet. "All in" is drumHits.ts' settled set, drumless tracks
     // included (from the PR #750 review: the hit lists in memory hold neither those nor more than 24).
     // A track whose hits are stored but not read this session still counts as not in: the test is
     // synchronous, and its drums go once they are read (dropStemDrums) or by the cache's own limit.
     const drumsMayRun = useVisualizerSettingsStore(state => smartBeatMayAnalyse(state.smartBeat)
-        && resolveBeatEffectSetting(state.smartBeat, BEAT_EFFECT_IDS.pendoloDrumhead).on) && drumModel;
+        && anyDrumBeatEffectOn(state.smartBeat)) && drumModel;
     useEffect(() => {
         setStemDrumsWanted(drumsMayRun
             ? (key) => !drumHitsSettled(key)

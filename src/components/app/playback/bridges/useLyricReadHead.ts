@@ -57,6 +57,10 @@ export function useLyricReadHead(globalLyricTimelineOffsetMs: number): number {
         const handedOver = wasShowingTailRef.current
             && !isShowingTail
             && usePlaybackStore.getState().transitionEnd === 'handedOver';
+        // The top of the whole song, which is where a full song's deck starts. A preview clip that
+        // starts inside its song, or a deck restored at a saved position, is not known here: the deck
+        // may still hold the previous song's source. The visualizer bridge moves the read-head onto the
+        // deck's real position: on each frame while it plays, and when it loads or seeks while paused.
         if (!handedOver) lyricCurrentTime.set(-(nextOffsetMs + globalLyricTimelineOffsetMs) / 1000);
         // Exactly ONE of these per song change, including across an automix blend. Two inside one
         // transition means the duplicate effect described above is back: the second one fires on

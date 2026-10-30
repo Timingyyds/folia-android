@@ -14,13 +14,31 @@ import './bravaisAccount.css';
 const BravaisSeamAccountSwitcher: React.FC<{
     account: BravaisHomeAccount;
     compact: boolean;
-}> = ({ account, compact }) => {
+    /** 横的首页窄缝的测量副本：同样的尺寸，不带按钮、data 属性与可访问名（BravaisSeamHomeRow 量宽度用）。 */
+    measure?: boolean;
+}> = ({ account, compact, measure = false }) => {
     const status = [account.providerLabel, account.detail].filter(Boolean).join(' · ');
     const label = `${account.guest ? account.connectLabel : account.toggleLabel} · ${status}`;
     const picture = account.guest
         ? <span className="bravais-account-avatar is-connect" aria-hidden data-bravais-account-avatar="connect"><Plug /></span>
         : <BravaisProviderAvatar providerId={account.providerId} name={account.providerLabel} avatarUrl={account.avatarUrl} />;
     const open = (event: React.MouseEvent<HTMLButtonElement>) => account.onOpen(event.currentTarget);
+
+    if (measure) {
+        // 头像 / 徽章 / 连接图标都是同一个尺寸的圆，占位 span 就够量宽度。
+        return compact ? (
+            <span className="bravais-account-switcher is-compact">
+                <span className="bravais-seam-icon bravais-account-spine"><span className="bravais-account-avatar" /></span>
+            </span>
+        ) : (
+            <span className="bravais-account-switcher">
+                <span className={`bravais-account-entry ${account.guest ? 'bravais-account-connect' : 'bravais-account-toggle'}`}>
+                    <span className="bravais-account-avatar" />
+                    <span className="is-name">{account.guest ? account.connectLabel : account.nickname ?? account.providerLabel}</span>
+                </span>
+            </span>
+        );
+    }
 
     if (compact) {
         return (

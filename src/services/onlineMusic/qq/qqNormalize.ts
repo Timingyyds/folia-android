@@ -330,6 +330,14 @@ export const normalizeQqCollection = (raw: unknown, type = 'playlist'): Provider
     // 「我喜欢」是自建目录 201（GetPlaylistByUin 实测；getPlaylistTracks 也按它走 liked-songs 路由）。收藏条目的
     // dirId 是创建者账号里的目录号，所以还要 owned，别把收藏来的别人的「我喜欢」标成自己的。
     const isLiked = owned === true && Number(dirId) === QQ_LIKED_DIR_ID;
+    // GetPlaylistByUin gives seconds; normalized snapshots already carry milliseconds. The empty
+    // liked folder reports a different updateTime on every read, so it has no reliable version.
+    const updateTime = Number(item.updateTime);
+    const keptUpdatedAt = Number(item.updatedAt);
+    const updatedAt = isLiked && trackCount === 0 ? undefined
+        : Number.isFinite(keptUpdatedAt) && keptUpdatedAt > 0 ? keptUpdatedAt
+            : owned === true && Number.isFinite(updateTime) && updateTime > 0 ? updateTime * 1000
+                : undefined;
 
     return {
         providerId: 'qq',
@@ -356,6 +364,7 @@ export const normalizeQqCollection = (raw: unknown, type = 'playlist'): Provider
             ['listId', pick(existing, 'listId')],
             ['period', pick(existing, 'period')],
         ]),
+        ...(updatedAt !== undefined ? { updatedAt } : {}),
         ...(isLiked ? { isLiked: true } : {}),
     };
 };

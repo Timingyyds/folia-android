@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, animate, AnimatePresence, useDragControls, useIsPresent } from 'framer-motion';
-import { ChevronLeft, Crosshair, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
+import { ChevronLeft, Crosshair, Disc, Download, ImagePlus, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
 import GridPanelToggleIndicator from '../shared/GridPanelToggleIndicator';
 import { useTranslation } from 'react-i18next';
 import { SongResult, type LocalSong, type StatusMessage, Theme, type UnifiedSong } from '../../../../types';
@@ -618,6 +618,7 @@ export const GridView: React.FC<GridViewProps> = ({
     const handleExportLocalPlaylist = useCallback(() => void mutations?.exportPlaylist(), [mutations]);
     const handleOrganizeSongInfo = useCallback(() => void mutations?.organizeSongInfo(), [mutations]);
     const handleEditEntity = useCallback(() => void mutations?.editEntity(), [mutations]);
+    const handleSetCover = useCallback(() => void mutations?.setCover(), [mutations]);
 
     const handleAddNavidromeCollectionToPlaylist = useCallback(async (playlistId: string | number) => {
         await mutations?.addToPlaylist(playlistId, playableTracks);
@@ -2109,6 +2110,15 @@ export const GridView: React.FC<GridViewProps> = ({
                                                 ? t('localMusic.albumLabel')
                                                 : t('localMusic.artistLabel'),
                                         })}
+                                    </button>
+                                )}
+                                {mutationCapabilities.setCover.supported && (
+                                    <button
+                                        onClick={handleSetCover}
+                                        className="w-full py-2.5 rounded-full text-xs font-semibold bg-zinc-800/10 dark:bg-zinc-100/10 hover:bg-zinc-900 hover:text-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-900 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                        <ImagePlus size={14} />
+                                        {t('localCollectionCover.menuLabel')}
                                     </button>
                                 )}
                                 {mutationCapabilities.deleteCollection.supported && (

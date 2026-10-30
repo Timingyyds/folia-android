@@ -656,7 +656,9 @@ export const handleQqEndpoint = async (
             page_num: Number(params.page ?? '1'),
             highlight: 0, nqc_flag: 0, page_id: 1, grp: 1,
           },
-        }, credential, { ct: 11, cv: '1003006', v: '1003006', tmeAppID: 'qqmusiclight', nettype: 'NETWORK_WIFI', udid: '0', uid: '0' });
+          // tmeAppID 用 'qqmusic'，不要用 'qqmusiclight'：上游把这个轻量客户端身份软封了，
+          // 搜歌一律回 2001 且 item_song 为空（2026-10-25 实测同一请求换 'qqmusic' 稳定回 20 条）。
+        }, credential, { ct: 11, cv: '1003006', v: '1003006', tmeAppID: 'qqmusic', nettype: 'NETWORK_WIFI', udid: '0', uid: '0' });
         const data = (reqData(musicu) ?? {}) as any;
         const body = (data?.body ?? {}) as any;
         // 条目原样交出去：normalizeQqSong 要 file.media_mid —— 播放链接的 filename 由它拼，

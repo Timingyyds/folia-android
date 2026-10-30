@@ -9,6 +9,7 @@ import { QQ_COMMUNITY_GROUP_NUMBER } from '../../../shared/qqCommunity';
 import { HELP_TAB_PLAYER_CONTROLS, HELP_TAB_PRIMARY_SHORTCUTS } from '../../userGuideContent';
 import { Button, CopyButton, CopyValue, Group, Keys, Row, type SettingsGroupDef } from '../kit';
 import { openOutsideLink } from '../../../../utils/system/outsideLink';
+import { FoundUpdateRow } from './FoundUpdateRow';
 import { iconLabel } from './iconLabel';
 
 // src/components/modal/settings/pages/HelpPage.tsx
@@ -29,8 +30,10 @@ const VERSION_INFO = (__DOCKER_STACK_VERSION__
     // issue says where the build came from.
     + (BUILD_KIND === 'official' ? '' : ` · ${BUILD_KIND_TAGS[BUILD_KIND]}`);
 
+const SHORTCUTS: SettingsGroupDef = { id: 'helpShortcuts', titleKey: 'help.keyboardShortcuts' };
 const PLAYER_KEYS: SettingsGroupDef = { id: 'helpPlayerControls', titleKey: 'help.playerControls' };
 const SUPPORT: SettingsGroupDef = { id: 'helpSupport', titleKey: 'aiHelp.title' };
+const ABOUT: SettingsGroupDef = { id: 'helpAbout', titleKey: 'help.version' };
 
 /** Two columns that become one where a column would be narrower than 280px. */
 const COLUMNS_CLASS = 'grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-x-3';
@@ -119,6 +122,13 @@ const HelpPage: React.FC<HelpPageProps> = ({ onOpenReleaseNotes, onOpenAiHelp, o
                 cells then sit as far under the cards above as any group does. */}
             <div className={`${COLUMNS_CLASS} mt-2 gap-y-2`}>
                 <div>
+                    <Group def={SHORTCUTS}>
+                        {HELP_TAB_PRIMARY_SHORTCUTS.map(shortcut => (
+                            <KeyRow key={shortcut.id} label={t(shortcut.titleKey, shortcut.fallback)} withPrimaryModifier keys={[shortcut.key]} />
+                        ))}
+                    </Group>
+                </div>
+                <div>
                     <Group def={PLAYER_KEYS}>
                         {HELP_TAB_PLAYER_CONTROLS.map(control => (
                             <KeyRow
@@ -141,6 +151,30 @@ const HelpPage: React.FC<HelpPageProps> = ({ onOpenReleaseNotes, onOpenAiHelp, o
                 </Row>
             </Group>
 
+            <Group def={ABOUT} bare>
+                <Row label={t('help.version')}>
+                    {/* One piece of the row: a version too long for its line breaks inside itself and keeps the button beside it. */}
+                    <span className="flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 select-text text-right font-mono text-xs text-[color:var(--st-t2)] [overflow-wrap:anywhere]">{VERSION_INFO}</span>
+                        <CopyButton text={VERSION_INFO} />
+                    </span>
+                </Row>
+                {BUILD_KIND !== 'official' && (
+                    <Row sub notice={t(BUILD_KIND === 'unofficial' ? 'options.unofficialBuildNotice' : 'options.selfHostedBuildNotice')} />
+                )}
+                <FoundUpdateRow sub />
+                <Row
+                    label={(
+                        // The settings window counts the clicks and shows the cat at the seventh.
+                        <button type="button" onClick={onProjectLabelClick} className="cursor-default">{t('help.madeBy')}</button>
+                    )}
+                >
+                    <Button variant="quiet" onClick={() => openOutsideLink(REPOSITORY_URL)}>
+                        {REPOSITORY_NAME}
+                        <ExternalLink size={12} />
+                    </Button>
+                </Row>
+            </Group>
         </>
     );
 };

@@ -418,8 +418,11 @@ export const handleNeteaseEndpoint = async (
         return simpleResponse(200, answer.body ?? { code: 502 });
       }
       case '/cloudsearch': {
+        // provider 调用的是 `/cloudsearch?keywords=…`（NeteaseCloudMusicApi 的参数名），
+        // 而 eapi 上游要的是 `s`。只读 `s` 的话关键词永远是空的，上游回 code 400、零首歌
+        // （2026-10-25 实测：s='' → 400；s=关键词 → 30 条）。两个名字都收。
         const answer = await eapiData('/api/cloudsearch/pc', {
-          s: str(params, 's'),
+          s: str(params, 's') || str(params, 'keywords'),
           type: num(params, 'type', 1),
           limit: num(params, 'limit', 30),
           offset: num(params, 'offset', 0),

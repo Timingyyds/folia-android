@@ -112,7 +112,11 @@ const BravaisCollection: React.FC<LibraryCollectionSurfaceProps> = ({
     const { playbackKey, queuedPlaybackKeys } = useBravaisPlaybackMarks();
     const unknownArtist = t('player.unknownArtist');
     // 专辑页：曲目封面的画法（整面墙拼成封面，或带单曲封面时切成碎片，bravaisAlbumWall）；只在专辑海报在场时画出来。
-    const albumCoverUrl = collection.type === 'album' ? snapshot?.detail?.coverUrl || collection.coverUrl || undefined : undefined;
+    // 墙画的是曲目，用自动封面（由歌推出来的那张）：本地专辑设了自定义集合封面时，海报换成那张，墙上的曲目不变。
+    const wallCoverUrl = collection.source === 'local' && collection.automaticCoverUrl !== undefined
+        ? collection.automaticCoverUrl
+        : collection.coverUrl;
+    const albumCoverUrl = collection.type === 'album' ? snapshot?.detail?.coverUrl || wallCoverUrl || undefined : undefined;
     const isAlbum = collection.type === 'album';
     const allItems = useMemo(() => {
         const projected = projectCollectionTracks(view.displayTracks, view.entryKeyAt, describeBravaisTrack, unknownArtist);

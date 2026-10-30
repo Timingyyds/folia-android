@@ -102,7 +102,7 @@ export const useBravaisCollectionSeam = (input: BravaisCollectionSeamInput) => {
     const status = projection.status;
     const syncLine = projection.sync && (projection.sync.onResume && !declares('resume-sync') ? { ...projection.sync, onResume: undefined } : projection.sync);
 
-    // 「⋯ 更多」：低频的集合动作（重新拉取、改名、加入歌单、重扫、整理、导出、实体信息、删除）。
+    // 「⋯ 更多」：低频的集合动作（重新拉取、改名、加入歌单、重扫、整理、导出、实体信息、设置封面、删除）。
     const menu = useMemo<BravaisSeamMenuItem[]>(() => {
         const items: BravaisSeamMenuItem[] = [];
         const runMutation = (action: (controller: CollectionMutationController) => Promise<LibraryMutationResult>) => () => {
@@ -132,6 +132,7 @@ export const useBravaisCollectionSeam = (input: BravaisCollectionSeamInput) => {
                 run: runMutation(c => c.editEntity()),
             });
         }
+        if (offers('set-cover')) items.push({ id: 'set-cover', label: t('localCollectionCover.menuLabel'), run: runMutation(c => c.setCover()) });
         if (offers('delete-collection')) {
             items.push({
                 id: 'delete-collection',

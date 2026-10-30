@@ -10,6 +10,7 @@ import { useVisualizerSettingsStore } from '../../../../stores/useVisualizerSett
 import { openAIEndpointOf } from '../../../../utils/openAIEndpoint';
 import { Button, FoldedGroup, Group, NumberField, Reveal, Row, Segmented, TextField, Toggle, Value, option, parseNumberText, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
 import { settingsAnchorSubview } from '../navigation/settingsAnchorModel';
+import AndroidAiSettings from './AndroidAiSettings';
 import { AiConnectionTestReply, useAiConnectionTest } from './AiConnectionTest';
 import { useSettingsPage, type AiApiKeyName } from './settingsPageContext';
 
@@ -188,6 +189,7 @@ const AppearancePage: React.FC = () => {
                 </Row>
             </Group>
 
+            {!isElectron && <AndroidAiSettings />}
             {isElectron && (
                 <FoldedGroup def={AI} summary={usesOpenAi ? t('options.otherCompatibleApi') : 'Google Gemini'}>
                     <Row option={O.aiProvider}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState, type RefObject } from 'react';
 import { motion, useMotionValue, useMotionValueEvent, useTransform } from 'framer-motion';
 import { Pause, Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +20,9 @@ import {
 import { getVisualizerScopedSeed } from '../../visualizer/registry';
 import type { VisualizerTuningBundle } from '../../visualizer/tuningRegistry';
 import type { VisualizerBackgroundConfig } from '../../visualizer/backgrounds/definition';
-import VisPlaygroundSampleStage from '../../visualizer/window/VisPlaygroundSampleStage';
+import VisPlaygroundSampleStage, { SampleBox } from '../../visualizer/window/VisPlaygroundSampleStage';
+import PreviewSourceSwitch, { type PreviewSource } from '../../visualizer/preview/PreviewSourceSwitch';
+import type { LivePreviewContent } from '../../visualizer/preview/livePreviewFeed';
 import { Tooltip } from '../settings/kit';
 import { SAMPLE_COLOR_MOTION_CLASS, ThemeSampleButton, ThemeSampleCard, themeSampleVars } from './ThemeSample';
 import type { EditableMode } from './themeParkDraft';
@@ -34,12 +36,25 @@ import type { EditableMode } from './themeParkDraft';
 
 type PreviewClock = ReturnType<typeof useMotionValue<number>>;
 
-/** The progress line and the time beside it, read from the sample's own clock. */
-const ThemeSampleProgress: React.FC<{ currentTime: PreviewClock }> = ({ currentTime }) => {
-    const progress = useTransform(currentTime, time => time / VIS_PLAYGROUND_PREVIEW_LOOP_DURATION);
-    const [seconds, setSeconds] = useState(() => Math.floor(currentTime.get()));
+/** Whole seconds of a clock reading, never below zero or short of a number. */
+const wholeSeconds = (time: number) => (Number.isFinite(time) ? Math.max(0, Math.floor(time)) : 0);
+
+/** How far along the line is: nothing while the length is not a positive number, as the player knows it for a stream. */
+const progressOf = (time: number, duration: number) => (
+    Number.isFinite(duration) && duration > 0 && Number.isFinite(time) ? Math.min(1, Math.max(0, time / duration)) : 0
+);
+
+/** The progress line and the time beside it, read from the clock the preview runs on. */
+const ThemeSampleProgress: React.FC<{ currentTime: PreviewClock; duration: number }> = ({ currentTime, duration }) => {
+    // The transform is made once; it reads the length when the time moves.
+    const durationRef = useRef(duration);
+    durationRef.current = duration;
+    const progress = useTransform(currentTime, time => progressOf(time, durationRef.current));
+    const [seconds, setSeconds] = useState(() => wholeSeconds(currentTime.get()));
+    // The clock can be another one (the live picture and the sample take turns) that stands still.
+    useEffect(() => setSeconds(wholeSeconds(currentTime.get())), [currentTime]);
     useMotionValueEvent(currentTime, 'change', (latest) => {
-        const next = Math.floor(latest);
+        const next = wholeSeconds(latest);
         setSeconds(previous => (previous === next ? previous : next));
     });
 
@@ -49,7 +64,7 @@ const ThemeSampleProgress: React.FC<{ currentTime: PreviewClock }> = ({ currentT
                 <motion.div className={`${SAMPLE_COLOR_MOTION_CLASS} h-full origin-left bg-[var(--ts-accent)]`} style={{ scaleX: progress }} />
             </div>
             <span className={`${SAMPLE_COLOR_MOTION_CLASS} shrink-0 font-mono text-xs tabular-nums text-[color:var(--ts-muted)]`}>
-                0:{String(seconds).padStart(2, '0')}
+                {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
             </span>
         </>
     );
@@ -81,11 +96,18 @@ const ThemePreview: React.FC<{
     subtitleContentMode?: SubtitleContentMode;
     lyricsFontScale: number;
     currentTime: PreviewClock;
+    progressTime: PreviewClock;
     currentLineIndex: number;
     audioPower: PreviewClock;
     audioBands: AudioBands;
     isPaused: boolean;
     onTogglePause: () => void;
+    previewSource: PreviewSource;
+    onPreviewSourceChange: (source: PreviewSource) => void;
+    /** What the player shows now, drawn in place of the sample; null for the sample. */
+    liveContent: LivePreviewContent | null;
+    /** The box of the preview, which the live picture watches while it is held still. */
+    boxRef: RefObject<HTMLDivElement | null>;
 }> = ({
     theme,
     mode,
@@ -103,51 +125,59 @@ const ThemePreview: React.FC<{
     subtitleContentMode,
     lyricsFontScale,
     currentTime,
+    progressTime,
     currentLineIndex,
     audioPower,
     audioBands,
     isPaused,
     onTogglePause,
+    previewSource,
+    onPreviewSourceChange,
+    liveContent,
+    boxRef,
 }) => {
         const { t } = useTranslation();
         const pauseLabel = isPaused ? t('ui.playPreview') : t('ui.pausePreview');
 
         return (
-            <div
-                className="relative isolate h-full overflow-hidden rounded-xl bg-[var(--ts-bg)] shadow-[0_0_0_1px_var(--st-line)]"
+            <SampleBox
+                ref={boxRef}
+                room="h-full"
+                className="relative isolate overflow-hidden rounded-xl bg-[var(--ts-bg)] shadow-[0_0_0_1px_var(--st-line)]"
                 style={themeSampleVars(theme)}
             >
                 {/* Styles lay out from the app's window (vw, window.innerWidth), so the style is drawn
-                    as large as the window and scaled to fit, as in the lyric style window, then zoomed
-                    in a little. The song card below is not scaled, so the subtitle keeps
-                    a set height above it (SUBTITLE_BOTTOM_PX). */}
+                    as large as the window and scaled to fit, as in the lyric style window. The song
+                    card below is not scaled, so the subtitle keeps a set height above it
+                    (SUBTITLE_BOTTOM_PX). */}
                 <VisPlaygroundSampleStage subtitleBottomPx={SUBTITLE_BOTTOM_PX}>
                     <div className="absolute inset-0">
                         <VisualizerRenderer
                             mode={visualizerMode}
                             visualizerTunings={visualizerTunings}
                             currentTime={currentTime}
-                            duration={VIS_PLAYGROUND_PREVIEW_LOOP_DURATION}
+                            duration={liveContent ? liveContent.duration : VIS_PLAYGROUND_PREVIEW_LOOP_DURATION}
                             currentLineIndex={currentLineIndex}
-                            lines={VIS_PLAYGROUND_PREVIEW_LINES}
+                            lines={liveContent ? liveContent.lines : VIS_PLAYGROUND_PREVIEW_LINES}
                             theme={theme}
                             isDaylight={mode === 'light'}
                             audioPower={audioPower}
                             audioBands={audioBands}
-                            songTitle="Cappella Preview"
+                            songTitle={liveContent ? liveContent.songTitle : 'Cappella Preview'}
                             showText
                             staticMode={staticMode}
                             isPreviewMode
+                            paused={isPaused}
                             visualizerOpacity={visualizerOpacity}
                             background={backgroundConfig}
-                            coverUrl={VIS_PLAYGROUND_PREVIEW_COVER_URL}
+                            coverUrl={liveContent ? (liveContent.coverUrl ?? undefined) : VIS_PLAYGROUND_PREVIEW_COVER_URL}
                             lyricsFontScale={lyricsFontScale}
                             showSubtitleTranslation={showSubtitleTranslation}
                             subtitleContentMode={subtitleContentMode}
                             cappellaCustomEmojiImages={cappellaCustomEmojiImages}
                             cappellaCustomAvatarImages={cappellaCustomAvatarImages}
                             monetPortraitImage={monetPortraitImage}
-                            seed={getVisualizerScopedSeed(visualizerMode, `theme-park-${mode}`)}
+                            seed={getVisualizerScopedSeed(visualizerMode, liveContent ? liveContent.seed : `theme-park-${mode}`)}
                         />
                     </div>
                 </VisPlaygroundSampleStage>
@@ -160,11 +190,17 @@ const ThemePreview: React.FC<{
                     </div>
                     <div className="absolute inset-x-5 bottom-[18px] flex items-center gap-4">
                         <ThemeSampleCard />
-                        <ThemeSampleProgress currentTime={currentTime} />
+                        <ThemeSampleProgress currentTime={progressTime} duration={liveContent ? liveContent.duration : VIS_PLAYGROUND_PREVIEW_LOOP_DURATION} />
                         <ThemeSampleButton />
                     </div>
                 </div>
 
+                <PreviewSourceSwitch
+                    value={previewSource}
+                    onChange={onPreviewSourceChange}
+                    liveEmpty={previewSource === 'live' && liveContent === null}
+                    className="absolute right-[60px] top-3 z-30 inline-flex"
+                />
                 <Tooltip text={pauseLabel} className="absolute right-3 top-3 z-30 inline-flex">
                     <button
                         type="button"
@@ -178,7 +214,7 @@ const ThemePreview: React.FC<{
                         {isPaused ? <Play size={14} className="translate-x-[1px]" fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
                     </button>
                 </Tooltip>
-            </div>
+            </SampleBox>
         );
     };
 

@@ -4,6 +4,7 @@ import { getFromCache, getLocalSongs } from '../../../../services/db';
 import { getLocalLibraryCatalogSnapshot } from '../../../../services/localLibraryEntityRepository';
 import { buildLocalQueue } from '../../../../services/playbackAdapters';
 import { prefetchNearbySongs } from '../../../../services/prefetchService';
+import { reportYieldedQueue, wholeQueueWritesSoFar } from '../../../../services/wholeQueueWrites';
 import type { ThemeCacheSongKey } from '../../../../services/themeCache';
 import { useOnlineProviderAccountStore } from '../../../../stores/useOnlineProviderAccountStore';
 import { restorePlaybackSourceForSong, type RestorePlaybackSourceOutcome } from './restorePlaybackSource';
@@ -11,10 +12,11 @@ import { getPlaybackSongKey, isStagePlaybackSong, normalizePlaybackSongSource } 
 import type { LyricData, SongResult, StatusMessage } from '../../../../types';
 import type { AudioQualityPreference, MediaId } from '../../../../types/onlineMusic';
 import { setStatusMessage as setStatusMsg } from '../../../../stores/useStatusMessageStore';
-import { setPlayQueue } from '../../../../stores/usePlaybackStore';
+import { setPlayQueue, usePlaybackStore } from '../../../../stores/usePlaybackStore';
 import { askedSongKeyRef, makeSongCurrent, startRestore } from '../currentSong';
 import { useAudioSettingsStore } from '../../../../stores/useAudioSettingsStore';
 import { isRestoredSongPlayable } from '../playableSong';
+import { releaseUnclaimedHifiTrack } from '../../../../services/hifi/hifiPlayback';
 
 // src/components/app/playback/restore/useSessionRestoreController.ts
 
@@ -59,6 +61,10 @@ export function useSessionRestoreController({
 
     const hasInitializedRef = useRef(false);
     const hasLoadedLocalLibraryRef = useRef(false);
+    // The whole-queue writes when the App first rendered, before the commit in which it hands mods
+    // replaceQueue (useFoliumHostActions). Not read when the restore starts: on the desktop that waits for
+    // the window handoff check, and a mod's replacement meanwhile would then be written over.
+    const queueWritesAtMountRef = useRef(wholeQueueWritesSoFar());
 
     useEffect(() => {
         if (hasLoadedLocalLibraryRef.current) {
@@ -81,6 +87,14 @@ export function useSessionRestoreController({
         hasInitializedRef.current = true;
 
         const restoreSession = async () => {
+            // A mod may replace the whole queue while the session is read (from its `activate`): its queue
+            // then stands over the remembered one, and is what gets saved and fetched around. The song
+            // itself is restored all the same.
+            const writesAtStart = queueWritesAtMountRef.current;
+            const rewritten = () => wholeQueueWritesSoFar() !== writesAtStart;
+            // Whether the remembered song went to restorePlaybackSourceForSong, which settles what an
+            // earlier window left playing in mpv itself (it takes it over, or stops it).
+            let handedToSourceRestore = false;
             try {
                 let lastSong = await getFromCache<SongResult>('last_song');
                 let lastQueue = await getFromCache<SongResult[]>('last_queue');
@@ -126,7 +140,7 @@ export function useSessionRestoreController({
                     if (!lastQueue.some(song => getPlaybackSongKey(song) === lastSongKey)) {
                         lastQueue.unshift(lastSong);
                     }
-                    await persistLastPlaybackCache(lastSong, lastQueue);
+                    await persistLastPlaybackCache(lastSong, rewritten() ? usePlaybackStore.getState().playQueue : lastQueue);
                 }
 
                 // A song asked for while the remembered one was being read stands: the restore gives up.
@@ -142,7 +156,15 @@ export function useSessionRestoreController({
                 }
                 makeSongCurrent(lastSong);
                 const stillWanted = startRestore();
-                setPlayQueue(lastQueue && lastQueue.length > 0 ? lastQueue : [lastSong]);
+                const rememberedQueue = lastQueue && lastQueue.length > 0 ? lastQueue : [lastSong];
+                if (rewritten()) {
+                    // Saved again now that a song is current: the replacement's own save found none, so it kept nothing.
+                    void persistLastPlaybackCache(lastSong, usePlaybackStore.getState().playQueue);
+                    // The remembered queue is the listener's: the replacement's undo puts it back.
+                    reportYieldedQueue({ queue: rememberedQueue, song: lastSong });
+                } else {
+                    setPlayQueue(rememberedQueue);
+                }
 
                 // Read at restore time rather than subscribed: this effect runs once, and the
                 // switch only ever has to answer for this one launch.
@@ -155,6 +177,7 @@ export function useSessionRestoreController({
                 }
 
                 let outcome: RestorePlaybackSourceOutcome = 'failed';
+                handedToSourceRestore = true;
                 try {
                     outcome = await restorePlaybackSourceForSong(lastSong, {
                         audioQuality,
@@ -166,6 +189,7 @@ export function useSessionRestoreController({
                         persistLastPlaybackCache,
                         queue: lastQueue || [lastSong],
                         stillWanted,
+                        queueWritesAtStart: writesAtStart,
                     });
                 } catch (error) {
                     console.warn('Failed to restore audio/lyrics for last session', error);
@@ -186,9 +210,13 @@ export function useSessionRestoreController({
                 // are cold, and neither track has been measured for automix. That makes the first
                 // song change of every session the slowest one and the only one that blends blind.
                 // Every other entry into playback prefetches; this one was simply never wired to.
-                void prefetchNearbySongs(lastSong, lastQueue || [lastSong], audioQuality, userId);
+                void prefetchNearbySongs(lastSong, rewritten() ? usePlaybackStore.getState().playQueue : lastQueue || [lastSong], audioQuality, userId);
             } catch (error) {
                 console.error('Session restore failed', error);
+            } finally {
+                // Nothing to restore (no song remembered, a song already asked for, the file gone from the
+                // library, a Stage session): a track an earlier window left playing in mpv is nobody's now.
+                if (!handedToSourceRestore) releaseUnclaimedHifiTrack('nothing to restore');
             }
         };
 

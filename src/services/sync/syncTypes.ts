@@ -28,6 +28,7 @@ export type SyncedVisualSettings = {
     followSystemTheme?: boolean;
     visualizerMode?: VisualizerMode;
     randomVisualizerModePerSong?: boolean;
+    randomVisualizerModes?: VisualizerMode[];
     visualizerBackgroundMode?: VisualizerBackgroundMode | null;
     backgroundOpacity?: number;
     visualizerOpacity?: number;

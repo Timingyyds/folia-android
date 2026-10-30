@@ -6,6 +6,7 @@ import { usePlayingSongLocatorStore } from '../../../stores/usePlayingSongLocato
 import { findItemSlotNear, type BravaisDisplay } from './bravaisDisplay';
 import { findNowPlayingKey } from './bravaisProjection';
 import type { BravaisFrameState } from './useBravaisFrame';
+import { seamPointOf } from './bravaisAnchor';
 
 // src/library/suites/bravais/useBravaisLocate.ts
 // bravais 在「定位正在播放」（app/playing-song-locator）里的那一份：集合层与网格的集合页一样被问（同一个页键，见层描述的
@@ -20,7 +21,7 @@ export const findItemSlotNearSeam = (
 ): WallSlot | null => findItemSlotNear(
     display,
     itemKey,
-    { x: frame.anchorX ?? frame.center.x, y: frame.center.y },
+    seamPointOf(frame),
 );
 
 export const useBravaisLocate = ({

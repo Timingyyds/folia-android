@@ -22,12 +22,15 @@ import {
 import { isSongUnavailable } from '../../../services/onlineMusic/songAvailability';
 import { addArtistTopSongsToQueue, selectQueueableTopSongs } from '../../../utils/artistTopSongsQueue';
 import { useLibrarySessionQuery } from '../shared/useLibrarySessionQuery';
+import { applyLocalArtistAlbumCoverOverrides } from '../collection/cover/localCollectionCover';
+import { useLocalCollectionCoverUrls } from '../collection/cover/useLocalCollectionCoverUrls';
 
 // src/library/core/artist/useArtistView.ts
 // 歌手页的视图与语义动作（P4.2），网格与 TUI 共用：筛选词读写浏览会话（换 suite 不丢），专辑按筛选只看名字，
 // 热门歌曲的可播放 / 可入队集合，能力（core/artist/artistSurface 的纯规则）与「声明 ∩ 能力」，以及播放 / 入队 /
 // 范围 / 重新加载 / 续页 / 编辑 / 打开专辑这些动作和命令面板 surface 的 getState / run。
 // 快照由 suite 自己订阅后交进来（网格拖拽时会暂存后台分页，这里只读它给的那一份）。回调保持稳定，执行时读最新的值。
+// 本地歌手的专辑设了自定义封面的（core/collection/cover），albums 带的是那张封面（与首页、专辑页同一张）。
 
 const EMPTY_SONGS: SongResult[] = [];
 const EMPTY_ALBUMS: LibraryArtistAlbum[] = [];
@@ -62,7 +65,14 @@ export const useArtistView = ({
     const deferredQuery = useDeferredValue(query);
 
     const topSongs = snapshot?.topSongs ?? EMPTY_SONGS;
-    const albums = snapshot?.albums ?? EMPTY_ALBUMS;
+    const snapshotAlbums = snapshot?.albums ?? EMPTY_ALBUMS;
+    // 自定义封面盖在资源派生出来的自动封面上：资源不必为换封面重新派生，所有 suite 的歌手页都经这里拿专辑。
+    const coverOverrides = useLocalCollectionCoverUrls();
+    const isLocalArtist = collection.source === 'local';
+    const albums = useMemo(
+        () => (isLocalArtist ? applyLocalArtistAlbumCoverOverrides(snapshotAlbums, coverOverrides) as LibraryArtistAlbum[] : snapshotAlbums),
+        [coverOverrides, isLocalArtist, snapshotAlbums],
+    );
     // 不可播放的热门歌曲不进队列（与歌单 / 专辑页一致）；入队还要按播放键去重。
     const playableTopSongs = useMemo(() => topSongs.filter(song => !isSongUnavailable(song)), [topSongs]);
     const queueableTopSongs = useMemo(() => selectQueueableTopSongs(topSongs), [topSongs]);

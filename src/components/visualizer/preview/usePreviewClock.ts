@@ -92,12 +92,12 @@ export const posterTime = (placeholder: PreviewPlaceholder): number => {
 };
 
 /** How far a held time steps, in seconds: far too little to show. */
-const HELD_TIME_STEP = 0.0001;
+export const HELD_TIME_STEP = 0.0001;
 
-type ClockValues = Pick<PreviewClock, 'currentTime' | 'audioPower' | 'audioBands'>;
+export type ClockValues = Pick<PreviewClock, 'currentTime' | 'audioPower' | 'audioBands'>;
 
 /** The motion values of a clock, in one fixed order. */
-const valuesOf = (clock: ClockValues): MotionValue<unknown>[] => [
+export const valuesOf =(clock: ClockValues): MotionValue<unknown>[] => [
     clock.currentTime,
     clock.audioPower,
     clock.audioBands.bass,

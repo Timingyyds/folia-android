@@ -28,6 +28,8 @@ export type CoreSurfaceParams = {
     canOrganizeSongInfo: boolean;
     canExportPlaylist: boolean;
     canEditEntity: boolean;
+    /** 本地文件夹 / 专辑 / 歌单能设自定义封面（只打开对话框，不随来源动作禁用）。 */
+    canSetCover: boolean;
     /** 能订阅 / 取消订阅（在线歌单、专辑）；切换进行中由 isSubscribing 挡掉。 */
     canToggleSubscribe: boolean;
     /** Online collection that can be fetched again past its cache; false while a load is running. */
@@ -57,6 +59,7 @@ export type CoreSurfaceParams = {
     organizeSongInfo: () => void;
     exportPlaylist: () => void;
     editEntity: () => void;
+    setCover: () => void;
     toggleSubscribe: () => void;
     reloadOnlineCollection: () => void;
 };
@@ -146,6 +149,7 @@ export const buildCoreSurfaceParams = (
         canOrganizeSongInfo: hasController && capabilities.organizeSongInfo.supported,
         canExportPlaylist: hasController && capabilities.exportPlaylist.supported,
         canEditEntity: hasController && capabilities.editEntity.supported,
+        canSetCover: hasController && capabilities.setCover.supported,
         canToggleSubscribe: hasController && capabilities.subscribe.supported,
         isSourceActionPending: snapshot.sourceActionPending,
         isSubscribing: snapshot.subscribing,
@@ -166,6 +170,7 @@ export const buildCoreSurfaceParams = (
         organizeSongInfo: () => void mutations?.organizeSongInfo(),
         exportPlaylist: () => void mutations?.exportPlaylist(),
         editEntity: () => void mutations?.editEntity(),
+        setCover: () => void mutations?.setCover(),
         toggleSubscribe: () => void mutations?.toggleSubscribe(),
     };
 };
@@ -188,6 +193,7 @@ export const GRID_SURFACE_ACTION_SOURCES: Readonly<Record<GridSurfaceActionId, {
     'organize-song-info': { action: 'organize-song-info' },
     'export-playlist': { action: 'export-playlist' },
     'edit-entity': { action: 'edit-entity' },
+    'set-cover': { action: 'set-cover' },
     'toggle-edit-mode': { extra: 'toggle-edit-mode' },
     'reload-online-collection': { action: 'reload' },
     'toggle-subscribe': { action: 'subscribe' },
@@ -236,6 +242,9 @@ export const buildGridSurfaceState = (params: GridSurfaceParams): GridSurfaceSta
     }
     if (params.canEditEntity) {
         availableActions.push('edit-entity');
+    }
+    if (params.canSetCover) {
+        availableActions.push('set-cover');
     }
     if (params.canEditPlaylist && canRunSourceAction) {
         availableActions.push('toggle-edit-mode');
@@ -291,6 +300,7 @@ export const runGridSurfaceAction = (action: GridSurfaceActionId, params: GridSu
         case 'organize-song-info': return params.organizeSongInfo();
         case 'export-playlist': return params.exportPlaylist();
         case 'edit-entity': return params.editEntity();
+        case 'set-cover': return params.setCover();
         case 'toggle-edit-mode': return params.toggleEditMode();
         case 'reload-online-collection': return params.reloadOnlineCollection();
         case 'toggle-subscribe': return params.toggleSubscribe();

@@ -1,4 +1,4 @@
-import { ArrowDownUp, CalendarClock, FolderSync, ListOrdered, PanelLeft, PanelRight, Pencil, RefreshCw, Share, SquarePen, Star, Tags, Type } from 'lucide-react';
+import { ArrowDownUp, CalendarClock, FolderSync, ImagePlus, ListOrdered, PanelLeft, PanelRight, Pencil, RefreshCw, Share, SquarePen, Star, Tags, Type } from 'lucide-react';
 import { createGridSurfaceCommand } from '../commandFactories';
 import type { CommandPaletteCommand } from '../types';
 
@@ -102,6 +102,14 @@ export const gridCommands: CommandPaletteCommand[] = [
         ['rename album', 'merge artist', '实体编辑'],
         'edit-entity',
         SquarePen,
+    ),
+    createGridSurfaceCommand(
+        'grid-set-cover',
+        'Set collection cover',
+        'Choose a fixed cover for this local folder, album or playlist',
+        ['cover', 'poster', 'artwork', '封面', '设置封面'],
+        'set-cover',
+        ImagePlus,
     ),
     createGridSurfaceCommand(
         'grid-toggle-edit-mode',

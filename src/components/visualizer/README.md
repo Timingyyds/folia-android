@@ -109,13 +109,13 @@ App / ThemePark / VisPlayground / OBS source
 
 ### 智能动感模式（beat FX）
 
-全局一个总开关，加每个「动感效果」自己的开关和强度（`SmartBeatSettings`，store 的 `smartBeat`：`enabled` 和按效果 id 存的 `effects`），不属于任何一个模式的 tuning。总开关在可视化设置窗口「歌词动画」页的最上面（`SmartBeatSettingsCard.tsx`）；效果在各模式自己的设置里，样式选项上面（`BeatEffectsGroup.tsx`）：每个效果一行，四字名、说明、开关，开着时下面一条强度滑杆，0–2×，1× 是调好的样子，在滑杆正中间，没动过的效果按 1×。
+全局一个三档总设置，加每个「动感效果」自己的开关和强度（`SmartBeatSettings`，store 的 `smartBeat`：`mode` 和按效果 id 存的 `effects`），不属于任何一个模式的 tuning。三档是 `off` 关闭、`cached` 只用已分析（只读存盘的拍点和鼓点，包括 automix 存的拍点，从不启动推理；没分析过的歌保持原画面）、`on` 开启（没分析过的歌当场在 GPU 上分析）；判断一律走 `smartBeatActive` / `smartBeatMayAnalyse`（`services/beatFx/beatEffects.ts`）。存盘、同步和导出时另带一个 `enabled`（只有 `on` 为 true），给没有三档的旧版本读。总设置单独在可视化设置窗口的「全局」页（`SmartBeatSettingsCard.tsx`）；效果在「歌词动画」页各模式自己的设置里，样式选项上面（`BeatEffectsGroup.tsx`），总设置关着时那里的提示带一颗直达「全局」页的按钮：每个效果一行，四字名、说明、开关，开着时下面一条强度滑杆，0–2×，1× 是调好的样子，在滑杆正中间，没动过的效果按 1×。
 
-效果登记在模式和背景的 entry 上（`beatEffects`，类型和 id 在 `services/beatFx/beatEffects.ts`）：每个效果有 id（`<模式>.<名字>`，存盘和导出都用它）、名字和说明的 i18n key、读哪路数据（`source`：`'beats'` 是 beat_this 的拍点，`'drums'` 是 htdemucs 分出的鼓点）。一个模式以后可以有好几个效果，加一条就行，设置界面和模型调度自动跟上。现在的效果：商籁「推镜裂光」（beats）、镜台「水镜涟漪」（beats）、时计「仿真鼓面」（drums）。`retired: true` 的效果代码和登记都在，但不跑也不出现在设置里：时计的「齿轮随拍」和隐现背景的「潮汐脉动」（2026-10-17 用户先搁置）。
+效果登记在模式和背景的 entry 上（`beatEffects`，类型和 id 在 `services/beatFx/beatEffects.ts`）：每个效果有 id（`<模式>.<名字>`，存盘和导出都用它）、名字和说明的 i18n key、读哪路数据（`source`：`'beats'` 是 beat_this 的拍点，`'drums'` 是 htdemucs 分出的鼓点）。一个模式以后可以有好几个效果，加一条就行，设置界面和模型调度自动跟上。现在的效果：商籁「推镜裂光」（beats）、镜台「水镜涟漪」（beats）、时计「仿真鼓面」（drums）、花火「随拍开花」与「随拍推镜」（都是 beats）、凝彩「墨染奥行」（drums，同一个开关还带上景深和运镜，见 [`tempera/README.md`](tempera/README.md) 的「墨染奥行」）。`retired: true` 的效果代码和登记都在，但不跑也不出现在设置里：时计的「齿轮随拍」和隐现背景的「潮汐脉动」（2026-10-17 用户先搁置）。
 
 `beatClockTargets.ts` 按屏上的模式和背景、哪些效果开着，算出要不要 beat_this（`visualizerWantsBeats`）、要不要 htdemucs（`visualizerWantsDrumHits`）：只有读它的效果开着才跑那个模型。时计只开仿真鼓面时 beat_this 完全不跑，节拍时钟只带曲目 key 和听到的时间（`useBeatFxTrack.ts`）。每帧的效果按自己的 id 问 `beatFxLive` 的 `getBeatEffectStrength`（不播时为 0）；读 `beatImpact` / `downbeatImpact` 的拍点效果，强度已由时钟乘好（轻拍、重拍都取屏上那个拍点效果的强度）。旧的全局轻拍 / 重拍两个强度在读存盘和导入时折成商籁、镜台效果的强度（两者平均，默认 1 / 1 仍是 1）。不显示背景的模式本来就写着 `background: false`（Still）。
 
-各自的读法：从 `motionSignals` 的 `beatImpact` / `downbeatImpact`（时钟已经乘好强度）读包络，要离散触发的（镜台每拍一个涟漪）读 `beatFxLive` 的 `getBeatFxFiredCounts`；一律先看 `isBeatFxReady()`（鼓点效果看自己的 `getBeatEffectStrength` 和 `getDrumHits`），没就绪就走原来的画面，所以关着时像素不变。商籁 `sonnet/sonnetBeatFx.ts`，镜台 `diorama/dioramaBeatRipples.ts`，时计 `pendolo/pendoloBeatFx.ts`（不读重音，只看节奏过滤，见 Pendolo 一节），隐现 `backgrounds/latent/LatentBackground.tsx`。
+各自的读法：从 `motionSignals` 的 `beatImpact` / `downbeatImpact`（时钟已经乘好强度）读包络，要离散触发的（镜台每拍一个涟漪）读 `beatFxLive` 的 `getBeatFxFiredCounts`；一律先看 `isBeatFxReady()`（鼓点效果看自己的 `getBeatEffectStrength` 和 `getDrumHits`），没就绪就走原来的画面，所以关着时像素不变。要提前排在拍上的（花火让升空尾迹正好在小节第一拍到达开花）读整张节拍表 `getBeatFxEvents()`，画面仍只由时间决定，拖进度也对。一个画面上有两个读拍点的效果时，时钟的包络乘的是排在前面那个的强度，另一个按 `getBeatFxIntensities()` 换算回自己的（花火的 `rescaleBeatEnvelope`）。商籁 `sonnet/sonnetBeatFx.ts`，镜台 `diorama/dioramaBeatRipples.ts`，花火 `hanabi/hanabiBeatFx.ts`，时计 `pendolo/pendoloBeatFx.ts`（不读重音，只看节奏过滤，见 Pendolo 一节），隐现 `backgrounds/latent/LatentBackground.tsx`。
 
 每拍还带「重音」（`services/analysis/beatAccents.ts`，和拍点在同一次 final0 分析里从同一份梅尔频谱算出）：强度 0–1、低 / 中 / 高三段的占比、小节位置（从 beat_this 的重拍往后数），以及整首歌的动感系数（0.45–1，只降不升）。
 
@@ -212,7 +212,7 @@ Visualizer 消费已解析的 `LyricData` / `Line` / `Word`，不负责解析 `.
 - `temperaProgram.ts` + `types.ts`：段落 / shot / slice 编译，121 种 shot kind
 - `temperaLayout.ts` + `temperaMotion.ts`：拼贴排版与逐字入场求解
 - `temperaDifferenceFilter.ts`：文字对背景逐像素反色，改动前务必先读那份说明里的约束
-- Tempera 渲染层不消费音频（`audioPower`/`audioBands` 只传给共享背景层）。
+- Tempera 渲染层不消费音频（`audioPower`/`audioBands` 只传给共享背景层）；智能动感模式的「墨染奥行」读的是鼓点（`temperaInkFlash.ts`），景深与运镜在 `temperaDepth.ts`。
 
 ### Lumiere
 
@@ -227,6 +227,24 @@ Visualizer 消费已解析的 `LyricData` / `Line` / `Word`，不负责解析 `.
 - `lumiereCreditsLayer.ts` + `credits.ts`：片尾卡在最后一句唱完前几秒才建；`overlay.ts`：取景器画框
 - `lumiereDarkField.ts`：暗场底（tuning `darkField`，浅色主题保底 0.94）是运行时铺在所有场景与片尾卡之下的一整块底，不随段落转场变化；光场着色器的 `uDark` 在 folia 里恒为 0
 - 歌词字号由光位的文字区决定，通用字号设置只影响底部字幕
+
+### Hanabi
+
+花火：日式歌词 PV——色块字、烟花 MG，镜头之间整个世界持续上升。移植自 lumisynth 的 `src/packs/hanabi`（设计说明在 lumisynth 的 `docs/HANABI.md`）。快速定位：
+
+- `hanabi/VisualizerHanabi.tsx`：React shell / subtitle；`createHanabiPixiRuntime.ts`：Pixi runtime（WebGL only，建一次、换歌就地交接，scene cache ±1，一帧最多做一件贵的事；空闲的帧里 `scene.prepare` 提前 1.5 秒备好马上要出场的镜头：画字形图集、建烟花池 / 装饰件 / 拼贴，建场景时只排版不光栅化）
+- 性能约定：每帧有显隐、换混合模式或 Graphics 重画的层各自是渲染组（`isRenderGroup`：烟花池、环境层、每行字的色块层与字层、每个装饰件），Pixi 只重排那一组的绘制指令；叠加的闪光单独一个池画在上面，精灵不来回换混合模式。画质档（tuning `renderQuality`，`hanabiTuning.ts`）：均衡 / 省电只降烟花辉光的分辨率（少降对应的级数，辉光宽度不变），省电再少画环境粒子；字与全屏辉光始终满分辨率
+- `hanabiProgram.ts` + `program.ts`：整首编译（段落首尾相接铺满时间轴；第一句晚于 3 秒时前面单独一个间奏段；段后空隙 ≥ 3 秒时最后一句唱完 0.6 秒收住、剩下的给间奏镜头；长于 10 秒的间奏切成约 7 秒的几段；纯音乐只有间奏镜头）。分段规则与绘光共用 `../paragraphStructure.ts`
+- `scene.ts` + `timeline.ts`：一个段落一个场景，世界上升与旋转在场景内部（tuning `spin`：世界绕画面中心贯穿整个单元一直在转，镜头内约 11°/秒慢转、镜头边界跟着上升再甩过 34°–80°（`timeline.planSpin` 排角度）。`timeline.spin` 按角速度设计：上升窗口里世界与上升一起按 `easeSwing` 甩过去（速度是 (1 − u²)⁴ 的圆顶鼓包，两头缓、中间快，`SWING_SHARPNESS` 调缓急），慢转的速度用七次 smootherstep（`easeSeptic`）换过去，位置、角速度、角加速度都连续，慢转与快转之间不会一下顿住；上升与镜头内运镜在窗口里也用 `easeSwing` 过渡。每段从整首歌的方向起转，边界两成换向、之后一半概率转回，单元最后一个镜头一定转回原方向，段落之间接上的总是同一个方向。每个镜头的 holder 绕「定格时的画面中心」反向转回自己的角度，镜头中点时构图正好是原样）；运行时只在外面套段落转场帧（`hanabiSceneFrames.ts` + `hanabiTransitions.ts`：上升 ascend / 闪白 flash / 开花 bloom，出场帧 + 边界后的交叉渐变，上升的旧画面过了边界按原速继续滑走、转走，三种都带一点旋转，乘 `spin`）
+- `hanabiSky.ts`：夜空底，运行时铺在所有场景之下（tuning `sky`）；`sky` ≥ 0.5 时配色换成深底的调色板（`color.ts`）
+- `hanabiCreditsLayer.ts` + `credits.ts`：片尾卡；`overlay.ts`：画框装饰
+- `text/`（文字引擎：排版、色块、逐字入场 / 强调 / 退场）与 `mg/`（烟花、升空尾迹、装饰件、环境粒子）同 lumisynth；`catalog.ts` 是 50 个镜头预设
+- `collage/`：folia 加的日系可爱 PV 拼贴（tuning `collage`，0 关掉）。`collagePlan.ts` 是纯数据：每个镜头按族挑一种配方（scrapbook / strips / echo / window / stickerbomb / quiet，间奏 bridge，歌曲以前奏开头时第一个间奏是 opening 标题卡），算出不带字的装饰带（电影胶片、剪刀剪出的剪切线、蕾丝花边）、关键词重复空心字、白边贴纸、胶带、格子纸片、小窗口、编号标签、开花时蹦出的主题图标贴纸（主题 `lyricsIcons` 里的 lucide 图标，没有时用 Flower；外壳在建运行时与换歌 / 换主题前先加载，`collagePainters.ts` 经 `resolveLucideIconNode` 用 Path2D 画成白边贴纸）、跟着升空尾迹转着上去的小图标、间奏往上飘的贴纸气球，都摆在字组外面或字后面；`collagePainters.ts` 用 Canvas 画纹理、按 key 缓存在场景单元里；`collageViews.ts` 全用精灵 / 平铺精灵，不用 Graphics 和遮罩；`unitCollage.ts` 是整段一份的网点底纹和左缘竖着的电影胶片，跟着世界上升走。片尾卡也挂一份（蕾丝花边 + 胶片）。曲名、艺人烘焙进了开场标题卡，变了会防抖重建场景
+- 配色加了糖果色角色 `kawaii`（`color.ts`），画框与片尾卡用它；色块上的深色字是深梅紫 `0x2b1f3d`，与拼贴件同色
+- bloom 与绘光共用 `../pixi/bloomFilter.ts`
+- `hanabiScreenBloom.ts`：全屏辉光。运行时在整个场景层（所有段落场景，不含夜空底与片尾卡）上挂一个共享 bloom（`pixi/bloomFilter.ts`，滤镜区域固定为整个画面、分辨率 `inherit`），强度 = 整体辉光（tuning `bloom`，默认 0.8）+ 副歌辉光（tuning `chorusBloom`，默认 1.3）× 副歌权重；副歌时段由编译时按歌词行的 `isChorus` 并出来（`program.chorus`，相邻副歌行合并，空隙 < 1.5 秒也合并），前后平滑亮起、收回；强度为 0 时摘掉 filter。两项都是每帧现读的字段，拖滑块不重建场景
+- `hanabiBeatFx.ts`：智能动感模式的两个效果。「随拍开花」按节拍表在夜空上半部每拍开一朵小烟花，小节第一拍提前升空、正好在拍上开大的，重音越强开得越大、没有节奏的小节不开；运行时把节拍表交给在画的场景，场景按拍的时刻把烟花放进那时所在的镜头（跟着上升、旋转）。「随拍推镜」把拍的包络套在整个场景层上（以画面中心推近、左右轻摆）。静态模式、仅显示歌词文字时都不放
+- 歌词字号由每个预设的文字区决定，通用字号设置只影响底部字幕
 
 ## Host surfaces
 

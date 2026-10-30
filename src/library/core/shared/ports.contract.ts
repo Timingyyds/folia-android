@@ -28,7 +28,7 @@ export type LibraryEnqueueOptions = { suppressToast?: boolean };
 /** 「加入歌单」选择器里的一项。 */
 export type LibraryPlaylistOption = { id: string | number; name: string; description?: string };
 
-/** 本地曲库的来源动作；最后三个只打开宿主挂载的对话框。 */
+/** 本地曲库的来源动作；最后四个只打开宿主挂载的对话框。 */
 export interface LibraryLocalMutationPort {
     removePlaylistSongs?: (playlistId: string, songIds: string[]) => Promise<void> | void;
     /** 重新读取本地曲库（歌单、歌曲）。 */
@@ -42,6 +42,8 @@ export interface LibraryLocalMutationPort {
     editEntity?: (entityId: string) => Promise<void> | void;
     organizeFolder?: (collection: LocalGridViewCollectionDescriptor) => Promise<void> | void;
     matchSong?: (songId: string) => Promise<void> | void;
+    /** 本地文件夹 / 专辑 / 歌单的自定义封面对话框。 */
+    editCover?: (collection: LocalGridViewCollectionDescriptor) => Promise<void> | void;
 }
 
 /** Navidrome 的来源动作。删歌按资源里的原始下标，不是界面上的显示下标。 */

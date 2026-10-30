@@ -5,10 +5,13 @@ import type { Theme } from '../../types';
 
 // src/components/command-palette/CommandPaletteVolumeControl.tsx
 // Keeps drag previews local and commits the persisted player volume only when interaction finishes.
+// On HiFi without software volume the slider is locked at what mpv puts out and says the DAC sets the level.
 
 type CommandPaletteVolumeControlProps = {
     isDaylight: boolean;
     isMuted: boolean;
+    /** HiFi without software volume: mpv plays at 100% and the DAC or amplifier sets the loudness. */
+    isVolumeFixed?: boolean;
     query: string;
     theme: Theme;
     volume: number;
@@ -25,6 +28,7 @@ const parsePercent = (value: string) => {
 const CommandPaletteVolumeControl: React.FC<CommandPaletteVolumeControlProps> = ({
     isDaylight,
     isMuted,
+    isVolumeFixed = false,
     query,
     theme,
     volume,
@@ -53,6 +57,9 @@ const CommandPaletteVolumeControl: React.FC<CommandPaletteVolumeControlProps> = 
     }, [query, volume]);
 
     const handleSliderInput = (nextVolume: number) => {
+        if (isVolumeFixed) {
+            return;
+        }
         isDraggingRef.current = true;
         pendingVolumeRef.current = nextVolume;
         setSliderVolume(nextVolume);
@@ -70,10 +77,15 @@ const CommandPaletteVolumeControl: React.FC<CommandPaletteVolumeControlProps> = 
         onVolumeChange(pendingVolumeRef.current);
     };
 
-    const VolumeIcon = isMuted || sliderVolume === 0
+    // Fixed: what mpv puts out, 100% (0% muted), as the panel's volume row shows it.
+    const shownVolume = isVolumeFixed ? (isMuted ? 0 : 1) : sliderVolume;
+    const VolumeIcon = isMuted || shownVolume === 0
         ? VolumeX
-        : sliderVolume < 0.5 ? Volume1 : Volume2;
-    const percent = Math.round(sliderVolume * 100);
+        : shownVolume < 0.5 ? Volume1 : Volume2;
+    const percent = Math.round(shownVolume * 100);
+    const hint = isVolumeFixed
+        ? t('hifi.player.volumeFixed')
+        : isMuted ? t('commandPalette.volumeMutedHint') : t('commandPalette.volumeControlHint');
 
     return (
         <div className="flex h-full items-center justify-center px-4 py-10">
@@ -83,14 +95,10 @@ const CommandPaletteVolumeControl: React.FC<CommandPaletteVolumeControlProps> = 
                         <VolumeIcon size={22} style={{ color: theme.accentColor }} />
                         <div>
                             <div className="text-sm font-medium">{t('commandPalette.volumeControlTitle')}</div>
-                            <div className="mt-0.5 text-xs opacity-50">
-                                {isMuted
-                                    ? t('commandPalette.volumeMutedHint')
-                                    : t('commandPalette.volumeControlHint')}
-                            </div>
+                            <div className="mt-0.5 text-xs opacity-50">{hint}</div>
                         </div>
                     </div>
-                    <div className="text-2xl font-semibold tabular-nums" style={{ color: theme.primaryColor }}>
+                    <div className={`text-2xl font-semibold tabular-nums${isVolumeFixed ? ' opacity-40' : ''}`} style={{ color: theme.primaryColor }}>
                         {percent}%
                     </div>
                 </div>
@@ -100,14 +108,15 @@ const CommandPaletteVolumeControl: React.FC<CommandPaletteVolumeControlProps> = 
                     min="0"
                     max="1"
                     step="0.01"
-                    value={sliderVolume}
+                    value={shownVolume}
+                    disabled={isVolumeFixed}
                     onInput={(event) => handleSliderInput(Number(event.currentTarget.value))}
                     onChange={(event) => handleSliderInput(Number(event.currentTarget.value))}
                     onPointerUp={commitVolumeChange}
                     onPointerCancel={commitVolumeChange}
                     onKeyUp={commitVolumeChange}
                     onBlur={commitVolumeChange}
-                    className="h-2 w-full cursor-pointer appearance-none rounded-full"
+                    className={`h-2 w-full appearance-none rounded-full ${isVolumeFixed ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
                     style={{
                         accentColor: theme.accentColor,
                         backgroundColor: isDaylight ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)',

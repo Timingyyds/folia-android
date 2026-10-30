@@ -96,7 +96,9 @@ export const VisualizerBackdropLayers: React.FC<VisualizerBackdropLayersProps> =
 
             {/* The built-in video layer follows the same rule as stage layers and stays out of the OBS
                 sources, which cannot open the main window's local file handle. */}
-            {!sharedProps?.isPreviewMode && !staticMode && isMainAppSurface && <VideoLayer paused={paused} />}
+            {/* 视频层不跟随音乐的播放/暂停状态：paused 在主页恒为 true（没有歌在放），
+                跟着它就只剩一帧静止画面。传给它的只表示「整层要静帧」（staticMode / 预览）。 */}
+            {!sharedProps?.isPreviewMode && !staticMode && isMainAppSurface && <VideoLayer paused={false} />}
         </>
     );
 };

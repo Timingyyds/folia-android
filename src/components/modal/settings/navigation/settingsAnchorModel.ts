@@ -42,6 +42,10 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
     lyrics: { section: 'lyrics' },
     scrobbleSettings: { section: 'integration' },
 
+    // pages/hifi/ on pages/PlaybackPage (desktop app only); the mpv output group only while mpv is the engine.
+    hifiEngine: { section: 'playback' },
+    hifiOutput: { section: 'playback' },
+
     // pages/GeneralPage, and the pinned commands on pages/InteractionPage
     languageSettings: { section: 'general' },
     ponderHints: { section: 'general' },

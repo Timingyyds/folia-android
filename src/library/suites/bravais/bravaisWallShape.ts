@@ -1,6 +1,6 @@
 import type { BlockSlot } from '../../../components/wall/blockTemplates';
 import { getPitch, overlaps, type Bounds } from '../../../components/wall/layout';
-import { nearestSeamBoundaryX } from '../../../components/wall/seamPlan';
+import { nearestSeamBoundaryX, nearestSeamBoundaryY } from '../../../components/wall/seamPlan';
 import {
     getBlockSize,
     getBlockSlots,
@@ -280,4 +280,9 @@ export const collectShapeSlots = (shape: BravaisWallShape, bounds: Bounds, limit
 /** 离 x 最近的块边界（缝开在它上面；探索形状的边界在街的正中）。 */
 export const nearestShapeBoundaryX = (shape: BravaisWallShape, x: number) => (
     nearestSeamBoundaryX(x, BRAVAIS_METRICS, shape.blockSize.width)
+);
+
+/** 离 y 最近的块行边界（横向的缝开在它上面；探索形状的边界在街的正中）。 */
+export const nearestShapeBoundaryY = (shape: BravaisWallShape, y: number) => (
+    nearestSeamBoundaryY(y, BRAVAIS_METRICS, shape.blockSize.height)
 );

@@ -23,6 +23,7 @@ import {
 } from './collectionMutationCapabilities';
 import { getProviderCacheKey } from '../../../../services/onlineMusic/providerStorage';
 import { isCloudDriveCollection } from '../collectionIdentity';
+import { supportsLocalCollectionCover } from '../cover/localCollectionCover';
 import { errorMessage } from '../../../../utils/errorText';
 import {
     askCollectionSaved,
@@ -554,6 +555,14 @@ export const createCollectionMutationController = (
             return runSourceAction('editEntity', () => (
                 descriptor.source === 'local' && descriptor.entityId
                     ? port.local?.editEntity?.(String(descriptor.entityId))
+                    : undefined
+            ), { exclusive: false });
+        },
+        setCover: () => {
+            const { descriptor, port } = inputs;
+            return runSourceAction('setCover', () => (
+                descriptor.source === 'local' && supportsLocalCollectionCover(descriptor)
+                    ? port.local?.editCover?.(descriptor)
                     : undefined
             ), { exclusive: false });
         },

@@ -105,7 +105,9 @@ const RemoteControlApp: React.FC = () => {
     const isIdle = useRemoteSleeve(!isLit && !sheet.isOpen, reduceMotion, cardRef);
     // Idle puts the line where the keys were; the switch "expand cover" decides whether it also opens the sleeve.
     const isSleeve = isIdle && presentation.expandCover;
-    useRemoteTextShade(backgroundMode === 'transparent', stageRef, textShadeRef, isSleeve);
+    // The switch "text shade", off by default: without it the idle type stands on what is behind the window with only its thin shadow.
+    const hasTextShade = backgroundMode === 'transparent' && presentation.textShade;
+    useRemoteTextShade(hasTextShade, stageRef, textShadeRef, isSleeve);
 
     useEffect(() => {
         document.body.style.backgroundColor = 'transparent';
@@ -155,15 +157,11 @@ const RemoteControlApp: React.FC = () => {
                 </div>
 
                 <div className="remote-face" style={REMOTE_DRAG_STYLE}>
-                    {backgroundMode === 'transparent' && (
-                        <>
-                            <div ref={textShadeRef} className="remote-cloud" data-empty="true" />
-                            <div className="remote-glass" />
-                        </>
-                    )}
+                    {hasTextShade && <div ref={textShadeRef} className="remote-cloud" data-empty="true" />}
+                    {backgroundMode === 'transparent' && <div className="remote-glass" />}
 
                     <div ref={stageRef} className="remote-stage" aria-hidden={sheet.isOpen}>
-                        <RemoteSongLine mode={shownLine ? 'line' : 'card'} handoff={handoff} reduceMotion={reduceMotion} />
+                        <RemoteSongLine mode={shownLine ? 'line' : 'card'} handoff={handoff} reduceMotion={reduceMotion} shade={hasTextShade} />
                         <RemoteOutgoingRecede handoff={handoff} reduceMotion={reduceMotion}>
                             <RemoteLyricBlock
                                 line={shownLine}
@@ -173,6 +171,7 @@ const RemoteControlApp: React.FC = () => {
                                 clock={clock}
                                 lyricOffsetSec={lyricOffsetSec}
                                 reduceMotion={reduceMotion}
+                                shade={hasTextShade}
                             />
                         </RemoteOutgoingRecede>
                     </div>

@@ -7,6 +7,10 @@ import { getFromCache, removeFromCache, saveToCache } from './db';
 // and lasts for the session only.
 
 const VIDEO_LAYER_FILE_HANDLE_KEY = 'video_layer_file_handle';
+/** 存的视频副本：没有 File System Access API 的地方（安卓 WebView）靠它跨重启。 */
+const VIDEO_LAYER_FILE_BLOB_KEY = 'video_layer_file_blob';
+/** 副本的文件名与类型，重建 File 时要用。 */
+const VIDEO_LAYER_FILE_META_KEY = 'video_layer_file_meta';
 
 type PermissionAwareFileHandle = FileSystemFileHandle & {
     queryPermission?: (descriptor: { mode: 'read' }) => Promise<PermissionState>;
@@ -62,6 +66,31 @@ export const pickVideoLayerFile = async (): Promise<PickedVideoFile | null> => {
         throw error;
     }
 };
+
+/** 把选中的视频本身存进 IndexedDB：没有句柄可存时的持久化办法。 */
+export const saveVideoLayerFileCopy = async (file: File): Promise<void> => {
+    await saveToCache(VIDEO_LAYER_FILE_BLOB_KEY, file);
+    await saveToCache(VIDEO_LAYER_FILE_META_KEY, { name: file.name, type: file.type, lastModified: file.lastModified });
+};
+
+/** 读回存下的视频副本；没有就返回 null。 */
+export const loadVideoLayerFileCopy = async (): Promise<File | null> => {
+    const blob = await getFromCache<Blob>(VIDEO_LAYER_FILE_BLOB_KEY);
+    if (!blob) return null;
+    const meta = await getFromCache<{ name?: string; type?: string; lastModified?: number }>(VIDEO_LAYER_FILE_META_KEY);
+    return new File([blob], meta?.name || 'video-layer', {
+        type: meta?.type || blob.type || 'video/mp4',
+        lastModified: meta?.lastModified ?? Date.now(),
+    });
+};
+
+export const clearVideoLayerFileCopy = async (): Promise<void> => {
+    await removeFromCache(VIDEO_LAYER_FILE_BLOB_KEY);
+    await removeFromCache(VIDEO_LAYER_FILE_META_KEY);
+};
+
+/** 这个构建能不能把选中的视频本身存下来（安卓与 Electron 都能）。 */
+export const canStoreVideoLayerFileCopy = (): boolean => typeof indexedDB !== 'undefined';
 
 export const saveVideoLayerFileHandle = (handle: FileSystemFileHandle) => saveToCache(VIDEO_LAYER_FILE_HANDLE_KEY, handle);
 

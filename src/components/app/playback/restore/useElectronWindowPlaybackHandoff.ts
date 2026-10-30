@@ -23,18 +23,34 @@ import { useAudioSettingsStore } from '../../../../stores/useAudioSettingsStore'
 import { usePlayerChromeSettingsStore } from '../../../../stores/usePlayerChromeSettingsStore';
 import { currentTime } from '../../../../stores/motionSignals';
 import { untransformedLyrics } from '../../../../services/hostExtensionHooks';
+import { lyricsBeforeRules } from '../../../../utils/lyrics/lyricLineRules';
+import { reportYieldedQueue, wholeQueueWritesSoFar } from '../../../../services/wholeQueueWrites';
+import { getHifiPosition, installHifiPlayback, isHifiRoute, releaseUnclaimedHifiTrack } from '../../../../services/hifi/hifiPlayback';
+import { hifiEngine } from '../../../../services/hifi/hifiEngine';
 
 // src/components/app/playback/restore/useElectronWindowPlaybackHandoff.ts
 // Captures and restores renderer playback state across Electron BrowserWindow rebuilds.
 
-// Snapshots cross IPC, so transformed lyrics arrive as a new object the new window's pipeline
-// cannot recognise and would transform again. Hand off the pre-transform lyrics instead; the
-// restore goes through setLyrics, which applies the extension transform once. Without an
-// extension transform in play this returns the snapshot unchanged.
-const withUntransformedLyrics = <Snapshot extends PlaybackSnapshot | null>(snapshot: Snapshot): Snapshot => {
+// Snapshots cross IPC, so the lyrics on screen arrive as a new object the new window's pipeline
+// cannot recognise and would transform and filter again. Hand off the lyrics as they were before
+// the extension transform and the line rules instead; the restore goes through setLyrics, which
+// applies both once.
+export const withUntransformedLyrics = <Snapshot extends PlaybackSnapshot | null>(snapshot: Snapshot): Snapshot => {
     if (!snapshot) return snapshot;
-    const lyrics = untransformedLyrics(snapshot.lyrics);
+    const lyrics = lyricsBeforeRules(untransformedLyrics(snapshot.lyrics));
     return lyrics === snapshot.lyrics ? snapshot : { ...snapshot, lyrics };
+};
+
+/**
+ * Nothing the old window played is restored here, so a track it left playing in mpv is nobody's now:
+ * stopped. The hand-off is asked for before this window's first look at mpv (the HiFi bridge, which
+ * takes that look, mounts further down in App), and the main process answers in order: a snapshot asked
+ * for after that look comes back after it, once the track the old window left is known.
+ */
+const releaseTrackLeftInMpv = async () => {
+    installHifiPlayback();
+    await hifiEngine.getSnapshot();
+    releaseUnclaimedHifiTrack('nothing to restore');
 };
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
@@ -98,7 +114,8 @@ const buildPlaybackSnapshot = ({
     playQueue,
     isFmMode,
     playerState,
-    currentTime: audioRef.current?.currentTime ?? currentTime.get(),
+    // On the HiFi route <audio> sits idle: the position is mpv's, as its clock reads it now.
+    currentTime: isHifiRoute() ? getHifiPosition() : (audioRef.current?.currentTime ?? currentTime.get()),
     duration,
     currentLineIndex,
 });
@@ -156,6 +173,9 @@ export function useElectronWindowPlaybackHandoff({
     const hasCompletedRestoreCheckRef = useRef(false);
     const isRestoringHandoffRef = useRef(false);
     const restoreWindowPlaybackHandoffRef = useRef<((handoff: WindowPlaybackHandoff) => Promise<boolean>) | null>(null);
+    // The whole-queue writes when the handoff began to be read. A mod that replaced the queue in this new
+    // window meanwhile (from its `activate`) keeps its queue, and the FM it ended, over the late handoff's.
+    const handoffQueueWritesRef = useRef<number | null>(null);
 
     const captureWindowPlaybackHandoff = useCallback((): WindowPlaybackHandoff => {
         const activePlayback = withUntransformedLyrics(buildPlaybackSnapshot({
@@ -234,8 +254,14 @@ export function useElectronWindowPlaybackHandoff({
     const restoreMainPlaybackSnapshot = useCallback(async (snapshot: PlaybackSnapshot | null) => {
         mainPlaybackSnapshotRef.current = snapshot;
         // A song asked for in the new window while the handoff was being read stands.
-        if (askedSongKeyRef.current !== null) return;
+        if (askedSongKeyRef.current !== null) {
+            void releaseTrackLeftInMpv();
+            return;
+        }
+        const queueWritesAtStart = handoffQueueWritesRef.current ?? undefined;
+        const queueRewritten = queueWritesAtStart !== undefined && wholeQueueWritesSoFar() !== queueWritesAtStart;
         if (!snapshot?.currentSong) {
+            void releaseTrackLeftInMpv();
             pendingResumeTimeRef.current = null;
             shouldAutoPlayRef.current = false;
             lastAudioRecoverySourceRef.current = null;
@@ -244,8 +270,13 @@ export function useElectronWindowPlaybackHandoff({
             setLyrics(null);
             setCachedCoverUrl(null);
             setAudioSrc(null);
-            setPlayQueue([]);
-            setIsFmMode(false);
+            if (!queueRewritten) {
+                setPlayQueue([]);
+                setIsFmMode(false);
+            } else {
+                // The old window's empty queue is the listener's: the replacement's undo puts it back.
+                reportYieldedQueue({ queue: [], isFmMode: false, song: null });
+            }
             setIsLyricsLoading(false);
             setPlayerState(PlayerState.IDLE);
             setCurrentLineIndex(-1);
@@ -264,8 +295,16 @@ export function useElectronWindowPlaybackHandoff({
         setLyrics(snapshot.lyrics);
         setCachedCoverUrl(snapshot.cachedCoverUrl);
         setAudioSrc(null);
-        setPlayQueue(restoredQueue);
-        setIsFmMode(snapshot.isFmMode);
+        if (!queueRewritten) {
+            setPlayQueue(restoredQueue);
+            setIsFmMode(snapshot.isFmMode);
+        } else {
+            // Saved again now that a song is current, as the session restore does: the replacement's own save
+            // found none, so it kept nothing, and the source's restore saves only on some of its paths.
+            void persistLastPlaybackCache(snapshot.currentSong, usePlaybackStore.getState().playQueue);
+            // The handed-over queue and FM are the listener's: the replacement's undo puts them back.
+            reportYieldedQueue({ queue: restoredQueue, isFmMode: snapshot.isFmMode, song: snapshot.currentSong });
+        }
         setIsLyricsLoading(false);
         setPlayerState(snapshot.playerState);
         setCurrentLineIndex(snapshot.currentLineIndex);
@@ -273,6 +312,8 @@ export function useElectronWindowPlaybackHandoff({
         setDuration(snapshot.duration);
 
         if (isStagePlaybackSong(snapshot.currentSong)) {
+            // A Stage song never plays through mpv.
+            void releaseTrackLeftInMpv();
             if (snapshot.audioSrc && !snapshot.audioSrc.startsWith('blob:')) {
                 setAudioSrc(snapshot.audioSrc);
             }
@@ -293,6 +334,8 @@ export function useElectronWindowPlaybackHandoff({
             queue: restoredQueue,
             stillWanted,
             hasFallbackSource: fallbackAudioSrc !== null,
+            queueWritesAtStart,
+            pendingResumeTimeRef,
         }).catch((error): RestorePlaybackSourceOutcome => {
             console.warn('[Electron] Failed to restore window playback handoff source', error);
             return 'failed';
@@ -342,6 +385,9 @@ export function useElectronWindowPlaybackHandoff({
 
         if (handoff.activePlaybackContext === 'stage') {
             mainPlaybackSnapshotRef.current = handoff.mainPlayback;
+            // The Stage plays on the Web engine, and the main song waits in the snapshot until it ends:
+            // a track the old window left playing in mpv is stopped before the Stage sounds.
+            await releaseTrackLeftInMpv();
             await restoreStagePlaybackHandoff(handoff);
             return true;
         }
@@ -396,6 +442,7 @@ export function useElectronWindowPlaybackHandoff({
         isRestoringHandoffRef.current = true;
 
         if (!consumeHandoffPromiseRef.current) {
+            handoffQueueWritesRef.current = wholeQueueWritesSoFar();
             consumeHandoffPromiseRef.current = window.electron.consumeWindowPlaybackHandoff();
         }
 

@@ -69,6 +69,13 @@ export class BeatThisWgsl {
     /** Graphs by chunk length: the full one, and the most recent shorter one. */
     private readonly graphs = new Map<number, Graph>();
 
+    /** GPU memory this model holds (weights and every graph built), bytes: for a residency budget. */
+    get bytes(): number {
+        let sum = this.owned.reduce((total, buffer) => total + buffer.size, 0);
+        for (const graph of this.graphs.values()) sum += graph.owned.reduce((total, buffer) => total + buffer.size, 0);
+        return sum;
+    }
+
     private graph(frames: number): Step[] {
         let found = this.graphs.get(frames);
         if (!found) {

@@ -21,6 +21,7 @@ import { BRAVAIS_SEAM_FLIP_ATTRIBUTE } from './bravaisSeamMotion';
 import type { BravaisTileHandlers } from './BravaisTile';
 import type { BravaisFrameState } from './useBravaisFrame';
 import type { useBravaisFocus } from './useBravaisFocus';
+import { seamPointOf } from './bravaisAnchor';
 
 // src/library/suites/bravais/useBravaisInteractions.ts
 // 点击与按键 → 动作：点歌曲磁贴就地展开聚焦卡（不播放），点歌单 / 专辑卡 push 下一层（先把被点的 slot 记成新层的
@@ -193,14 +194,14 @@ export const useBravaisInteractions = ({
 
     /** 第一次按方向键：落在屏内离缝最近的有内容磁贴。 */
     const seedSlot = useCallback(() => {
-        const { view, center, anchorX } = frameRef.current;
+        const { view, center } = frameRef.current;
         if (!view) return null;
         const visible = getViewWorldBounds(center, view);
         const onScreen = slotsRef.current.filter(slot => overlaps(
             { left: slot.x, right: slot.x + slot.width, top: slot.y, bottom: slot.y + slot.height },
             visible,
         ));
-        return findNearestSlot(onScreen, { x: anchorX ?? center.x, y: center.y }, hasContent);
+        return findNearestSlot(onScreen, seamPointOf(frameRef.current), hasContent);
     }, [frameRef, hasContent, slotsRef]);
 
     const focusWall = useCallback(() => fieldRef.current?.focus({ preventScroll: true }), [fieldRef]);
@@ -400,8 +401,8 @@ export const useBravaisInteractions = ({
             shortcut.open();
             return;
         }
-        const { view, center, anchorX } = frameRef.current;
-        const slot = findDisplayItemSlot(display, shortcut.itemKey, { x: anchorX ?? center.x, y: center.y });
+        const { view, center } = frameRef.current;
+        const slot = findDisplayItemSlot(display, shortcut.itemKey, seamPointOf(frameRef.current));
         const visible = view ? getViewWorldBounds(center, view) : null;
         const onScreen = slot && visible
             && slot.centerX >= visible.left && slot.centerX <= visible.right

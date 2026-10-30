@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type { MotionValue } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { getCacheUsageByCategory, clearCacheByCategory } from '../../services/db';
+import { forgetSettledDrumHits } from '../../services/analysis/drumHits';
+import { clearBalanceRuntime } from '../../services/volumeBalance/balanceRecords';
 import { DualTheme, StageStatus, StageSource, Theme, ThemeMode, type NowPlayingConnectionStatus, type ReplayGainMode } from '../../types';
 import { getNavidromeConfig, saveNavidromeConfig, clearNavidromeConfig, hashPassword, navidromeApi, setNavidromeEnabled, getCachedNavidromeServerProfile, refreshNavidromeServerProfile, getNavidromeConfigOrigin, dismissNavidromeServerPreset } from '../../services/navidromeService';
 import { fetchNavidromeServerPreset, markNavidromeConfigAsPresetIfMatching, restoreNavidromeServerPreset } from '../../services/navidromeServerPreset';
@@ -233,8 +235,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleSetSubtitleFontFallbackFamilies: onSubtitleFontFallbackFamiliesChange,
     } = useTypographySettingsStore(useShallow(selectTypographySettingsSnapshot));
     const {
-        lyricFilterPattern,
-        lyricFilterEnabled,
+        lyricLineRules,
         lyricStaffPolicy,
         lyricStaffMinDwellSeconds,
         lyricStaffAbsorbMode,
@@ -375,7 +376,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         lyrics: '0 B',
         cover: '0 B',
         media: '0 B',
-        analysis: '0 B'
+        analysis: '0 B',
+        volumeBalance: '0 B'
     });
     const [mediaCount, setMediaCount] = useState(0);
     const [isCleaning, setIsCleaning] = useState<CacheCategory | null>(null);
@@ -385,6 +387,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isElectron, setIsElectron] = useState(hasElectronBridge);
     const [electronSettings, setElectronSettings] = useState({
         GEMINI_API_KEY: '',
+        // Blank: the default model, worked out when the request is made (nothing is written back).
+        GEMINI_API_MODEL: '',
+        AI_PROVIDER_PRESET: '',
         OPENAI_API_KEY: '',
         OPENAI_API_URL: '',
         OPENAI_API_MODEL: '',
@@ -550,6 +555,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             await (window as any).electron.saveSettings('OPENAI_API_MODEL', electronSettings.OPENAI_API_MODEL);
             await (window as any).electron.saveSettings('OPENAI_API_TEMPERATURE', temperature);
             await (window as any).electron.saveSettings('OPENAI_API_STREAM', electronSettings.OPENAI_API_STREAM === true);
+            await (window as any).electron.saveSettings('GEMINI_API_MODEL', electronSettings.GEMINI_API_MODEL);
+            await (window as any).electron.saveSettings('AI_PROVIDER_PRESET', electronSettings.AI_PROVIDER_PRESET);
             await (window as any).electron.saveSettings('AI_PROVIDER', electronSettings.AI_PROVIDER);
             await (window as any).electron.saveSettings('USE_SYSTEM_PROXY_FOR_AI', electronSettings.USE_SYSTEM_PROXY_FOR_AI);
             await (window as any).electron.saveSettings('ENABLE_UPDATE_CHECK', electronSettings.ENABLE_UPDATE_CHECK);
@@ -811,7 +818,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             lyrics: formatBytes(usage.lyrics),
             cover: formatBytes(usage.cover),
             media: formatBytes(usage.media),
-            analysis: formatBytes(usage.analysis)
+            analysis: formatBytes(usage.analysis),
+            volumeBalance: formatBytes(usage.volumeBalance)
         });
         setMediaCount(usage.mediaCount);
     };
@@ -829,7 +837,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleClear = async (category: CacheCategory) => {
         setIsCleaning(category);
+        // 智能平衡's readings held in memory go with its stored ones, or they would be written back. First, so
+        // a write already sent lands before the clear and none is sent after it.
+        if (category === 'volumeBalance') clearBalanceRuntime();
         await clearCacheByCategory(category);
+        // The drum hits' memory of which tracks are stored goes with the stored analyses.
+        if (category === 'analysis') forgetSettledDrumHits();
         await fetchCacheUsage();
         setIsCleaning(null);
     };
@@ -1394,8 +1407,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 isOpen={showLyricFilterSettings}
                 isDaylight={isDaylight}
                 currentSongTitle={currentSongTitle}
-                initialPattern={lyricFilterPattern}
-                initialFilterEnabled={lyricFilterEnabled}
+                initialRules={lyricLineRules}
                 initialStaffPolicy={lyricStaffPolicy}
                 initialStaffMinDwellSeconds={lyricStaffMinDwellSeconds}
                 initialStaffAbsorbMode={lyricStaffAbsorbMode}

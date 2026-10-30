@@ -9,6 +9,7 @@ import { clearPrefetchRuntime } from '../../services/prefetchService';
 import { clearTrackProfileRuntime } from '../../services/automix/profileService';
 import { dropPlaysInFlight, makeSongCurrent } from '../../components/app/playback/currentSong';
 import { forgetPlaybackCache } from '../../components/app/playback/persistPlaybackCache';
+import { leaveHifiRoute } from '../../services/hifi/hifiPlayback';
 
 // src/library/app/createLibraryAccountPort.ts
 // 在线账户 controller 的播放器端口（照 createLibraryHomePort 的做法）：平台换了时清空播放器——切到别的平台
@@ -43,6 +44,9 @@ export const emptyPlayerForProviderChange = (host: LibraryAccountSwitchHost, nex
     audio?.pause();
     audio?.removeAttribute('src');
     audio?.load();
+    // On the HiFi route the sound is not in <audio>: mpv stops, the exclusive device is let go and the
+    // route goes back to web (nothing happens off that route).
+    leaveHifiRoute('provider switch');
     if (playback.audioSrc?.startsWith('blob:')) URL.revokeObjectURL(playback.audioSrc);
     playback.setAudioSrc(null);
     // A play of the old platform that is still fetching its address must not bring its song back.

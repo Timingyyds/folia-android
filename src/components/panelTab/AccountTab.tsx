@@ -14,6 +14,7 @@ import { GroupLine } from './shell/GroupLine';
 import { PanelButton } from './shell/PanelButton';
 import { PanelIconButton } from './shell/PanelIconButton';
 import { PanelRow } from './shell/PanelRow';
+import { PlaybackSignalPathButton } from '../hifi/PlaybackSignalPathButton';
 
 // src/components/panelTab/AccountTab.tsx
 // The panel's account tab: who is signed in on the active platform (or that nobody is, or that the
@@ -133,6 +134,8 @@ const AccountTab: React.FC<AccountTabProps> = ({
                     onChange={(quality) => { if (quality !== litQuality) onAudioQualityChange(quality); }}
                 />
             </PanelRow>
+
+            <PlaybackSignalPathButton />
 
             {activeUser && (
                 <div className="flex px-1 py-2">

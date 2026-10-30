@@ -41,6 +41,7 @@ export const BEAT_EFFECT_IDS = {
     latentPulse: 'latent.pulse',
     hanabiBeatBursts: 'hanabi.beatBursts',
     hanabiBeatPulse: 'hanabi.beatPulse',
+    temperaInkFlash: 'tempera.inkFlash',
 } as const;
 
 /**
@@ -52,6 +53,16 @@ export const LEGACY_BEAT_LIST_EFFECT_IDS: readonly string[] = [BEAT_EFFECT_IDS.s
 /** The effect's setting, or the default for one never touched. */
 export const resolveBeatEffectSetting = (settings: SmartBeatSettings, id: string): BeatEffectSetting =>
     settings.effects[id] ?? BEAT_EFFECT_DEFAULT;
+
+/**
+ * The effects that read drum hits (`source: 'drums'`), on any picture. Their declarations live on the
+ * registry entries, which this service may not import, so the list is spelled out here.
+ */
+export const DRUM_BEAT_EFFECT_IDS: readonly string[] = [BEAT_EFFECT_IDS.pendoloDrumhead, BEAT_EFFECT_IDS.temperaInkFlash];
+
+/** Whether any drum-hit effect is switched on, whichever picture is on screen. */
+export const anyDrumBeatEffectOn = (settings: SmartBeatSettings): boolean =>
+    DRUM_BEAT_EFFECT_IDS.some(id => resolveBeatEffectSetting(settings, id).on);
 
 /** Whether the effects play at all: 智能动感模式 on, or on what is already stored (`cached`). */
 export const smartBeatActive = (settings: SmartBeatSettings): boolean => settings.mode !== 'off';

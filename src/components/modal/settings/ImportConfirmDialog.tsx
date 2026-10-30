@@ -8,6 +8,7 @@ import { getVisualizerBackgroundModeLabel, hasVisualizerBackgroundMode } from '.
 import { ACTIVATE_CUSTOM_THEME_KEY, THEME_DARK_KEY, THEME_LIGHT_KEY, type ImportChange, type ImportGroup, type ImportPlan } from '../../../utils/appearanceImportPlan';
 import { resolveSettingLabelKey, resolveSettingValueLabelKey } from '../../../utils/settingLabelLookup';
 import { isLibraryWallSeamStyle, LIBRARY_WALL_SEAM_STYLE_LABEL_KEYS } from '../../../utils/libraryWallSeamStyle';
+import { isLibraryWallSeamDirection, LIBRARY_WALL_SEAM_DIRECTION_TEXT } from '../../../utils/libraryWallSeamDirection';
 
 // src/components/modal/settings/ImportConfirmDialog.tsx
 // What an imported config would change, before it is applied, chosen field by field. Rows spell out
@@ -71,6 +72,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
     songThemeAutoSwitchEnabled: 'options.autoSwitchSongTheme',
     songThemeAutoGenerateEnabled: 'options.autoGenerateSongTheme',
     randomVisualizerModePerSong: 'options.importFieldRandomMode',
+    randomVisualizerModes: 'options.randomVisualizerModes',
     lyricsFontStyle: 'options.importFieldLyricsFontStyle',
     lyricsFontScale: 'options.importFieldLyricsFontScale',
     lyricsFontWeight: 'options.fontWeight',
@@ -91,11 +93,14 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
     stageTrackPillMode: 'options.stageTrackPill',
     stageTrackPillTimeoutSec: 'options.stageTrackPillTimeout',
     stageTrackPillOnHome: 'options.stageTrackPillOnHome',
+    stageTrackPillPosition: 'options.stageTrackPillPosition',
     libraryWallStackEdges: 'options.bravaisStackEdges',
     libraryWallSeamClear: 'options.bravaisSeamClear',
     libraryWallSeamStyle: 'options.bravaisSeamStyle',
     libraryWallBackdropLyrics: 'options.bravaisBackdropLyrics',
     libraryWallBackdropBlur: 'options.bravaisBackdropBlur',
+    libraryWallSeamDirection: 'options.bravaisSeamDirection',
+    playerHeaderBlur: 'options.playerHeaderBlur',
 };
 
 // The per-renderer tunings borrow the renderer's own display name instead of inventing one.
@@ -286,6 +291,9 @@ const ImportConfirmDialog: React.FC<ImportConfirmDialogProps> = ({
         }
         if (key === 'libraryWallSeamStyle' && isLibraryWallSeamStyle(value)) {
             return <span className={cls}>{t(LIBRARY_WALL_SEAM_STYLE_LABEL_KEYS[value])}</span>;
+        }
+        if (key === 'libraryWallSeamDirection' && isLibraryWallSeamDirection(value)) {
+            return <span className={cls}>{t(LIBRARY_WALL_SEAM_DIRECTION_TEXT[value].label)}</span>;
         }
         if (isHexColor(value)) {
             return (

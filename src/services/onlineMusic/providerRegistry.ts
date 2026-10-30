@@ -111,4 +111,5 @@ registerOnlineMusicProvider(qqProvider);
 registerOnlineMusicProvider(bodianProvider);
 registerOnlineMusicProvider(ytmProvider);
 registerOnlineMusicProvider(spotifyProvider);
+
 registerOnlineMusicProvider(qishuiProvider);

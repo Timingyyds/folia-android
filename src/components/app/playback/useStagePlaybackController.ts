@@ -7,7 +7,7 @@ import { NowPlayingProvider } from '../../../services/nowPlayingProvider';
 import { usePlayerCapSource } from '../../../hooks/usePlayerCapSource';
 import { findLatestActiveLineIndex, hasRenderableLyrics } from '../../../utils/appPlaybackHelpers';
 import { buildStageEntryKey, getStageLyricsTimelineBounds } from '../../../utils/appStageHelpers';
-import { getPlaybackSongKey, isStagePlaybackSong } from '../../../utils/appPlaybackGuards';
+import { getPlaybackSongKey, isLocalPlaybackSong, isNavidromePlaybackSong, isStagePlaybackSong } from '../../../utils/appPlaybackGuards';
 import {
     buildNowPlayingContentLoadKey,
     clampNowPlayingTimeSec,
@@ -42,19 +42,32 @@ import { setActivePlaybackContext, setAudioSrc, setCachedCoverUrl, setCurrentLin
 import { useStableActionSurface } from '../../../hooks/useStableCallbacks';
 import { useTranslation } from 'react-i18next';
 import { usePlaybackStore } from '../../../stores/usePlaybackStore';
-import { askForSong, askedSongKeyRef, dropPlaysInFlight, makeSongCurrent, showSong } from './currentSong';
+import { askForSong, askedSongKeyRef, dropPlaysInFlight, makeSongCurrent, showSong, startRestore } from './currentSong';
 import { supplyLyricsAfterEmptyLoad } from './createLyricsSetter';
 import { useStageSettingsStore } from '../../../stores/useStageSettingsStore';
 import { currentTime } from '../../../stores/motionSignals';
+import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
+import type { PlaybackRoute } from '../../../types/hifi';
+import { getHifiPosition, isHifiRoute } from '../../../services/hifi/hifiPlayback';
+import { restorePlaybackSourceForSong } from './restore/restorePlaybackSource';
+import { findPlaybackDecks } from '../../hifi/useWebEngineYield';
 
 // src/components/app/playback/useStagePlaybackController.ts
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
 
+/**
+ * A snapshot of the player plus the engine that was sounding it. Only the stage round trip reads the
+ * route; a snapshot without one (from a window that did not write it) counts as 'web'.
+ */
+type RoutedPlaybackSnapshot = PlaybackSnapshot & { route?: PlaybackRoute };
+
 type UseStagePlaybackControllerParams = {
     isDev: boolean;
     isElectronWindow: boolean;
     audioRef: RefObject<HTMLAudioElement | null>;
+    /** Handed to the source restore of a main song that comes back from the stage (see applyPlaybackSnapshot). */
+    blobUrlRef: MutableRefObject<string | null>;
     shouldAutoPlayRef: MutableRefObject<boolean>;
     pendingResumeTimeRef: MutableRefObject<number | null>;
     lastAudioRecoverySourceRef: MutableRefObject<string | null>;
@@ -88,6 +101,7 @@ export function useStagePlaybackController({
     isDev,
     isElectronWindow,
     audioRef,
+    blobUrlRef,
     shouldAutoPlayRef,
     pendingResumeTimeRef,
     lastAudioRecoverySourceRef,
@@ -133,7 +147,7 @@ export function useStagePlaybackController({
         lastError: null,
     });
 
-    const mainPlaybackSnapshotRef = useRef<PlaybackSnapshot | null>(null);
+    const mainPlaybackSnapshotRef = useRef<RoutedPlaybackSnapshot | null>(null);
     const stagePlaybackSnapshotRef = useRef<PlaybackSnapshot | null>(null);
     const lastLoadedStageEntryKeyRef = useRef<string | null>(null);
     const lastKnownMainSongRef = useRef<SongResult | null>(null);
@@ -194,36 +208,78 @@ export function useStagePlaybackController({
     const playerCapSongIdRef = useRef(-1);
     const playerCapSongKeyRef = useRef('');
 
-    const buildPlaybackSnapshot = useCallback((): PlaybackSnapshot => ({
-        currentSong,
-        lyrics,
-        cachedCoverUrl,
-        audioSrc,
-        playQueue,
-        isFmMode,
-        playerState,
-        currentTime: audioRef.current?.currentTime ?? currentTime.get(),
-        duration,
-        currentLineIndex,
-    }), [audioRef, audioSrc, cachedCoverUrl, currentLineIndex, currentSong, currentTime, duration, isFmMode, lyrics, playQueue, playerState]);
+    const buildPlaybackSnapshot = useCallback((): RoutedPlaybackSnapshot => {
+        // On the HiFi route mpv sounds the song and the deck sits idle: the position is mpv's.
+        const onHifi = isHifiRoute();
+        return {
+            currentSong,
+            lyrics,
+            cachedCoverUrl,
+            audioSrc,
+            playQueue,
+            isFmMode,
+            playerState,
+            currentTime: onHifi ? getHifiPosition() : audioRef.current?.currentTime ?? currentTime.get(),
+            duration,
+            currentLineIndex,
+            route: onHifi ? 'hifi' : 'web',
+        };
+    }, [audioRef, audioSrc, cachedCoverUrl, currentLineIndex, currentSong, currentTime, duration, isFmMode, lyrics, playQueue, playerState]);
 
-    const applyPlaybackSnapshot = useCallback((snapshot: PlaybackSnapshot | null) => {
+    const applyPlaybackSnapshot = useCallback((snapshot: RoutedPlaybackSnapshot | null) => {
+        const song = snapshot?.currentSong ?? null;
+        // A local or Navidrome song mpv was playing has no source a deck could pick up again: entering the
+        // stage stopped mpv. Neither has one whose snapshot holds no source at all. Its source is restored
+        // instead, which routes it to HiFi again and starts it there at the saved position.
+        const restoresSource = Boolean(
+            snapshot && song
+            && (isLocalPlaybackSong(song) || isNavidromePlaybackSong(song))
+            && (snapshot.route === 'hifi' || !snapshot.audioSrc),
+        );
         pendingResumeTimeRef.current = snapshot ? Math.max(0, snapshot.currentTime) : null;
         shouldAutoPlayRef.current = snapshot?.playerState === PlayerState.PLAYING;
         lastAudioRecoverySourceRef.current = null;
         currentOnlineAudioUrlFetchedAtRef.current = null;
-        makeSongCurrent(snapshot?.currentSong ?? null);
+        if (restoresSource) {
+            // Nothing of this snapshot plays from a deck, and a null audioSrc does not stop one: the
+            // deck that sounded the stage's media is paused and emptied here, or it keeps sounding
+            // (and its timeupdate and ended drive the main player) until the restore moves the route,
+            // or for good when the restore fails.
+            findPlaybackDecks(audioRef.current).forEach((deck) => {
+                deck.pause();
+                deck.removeAttribute('src');
+                deck.load();
+            });
+        }
+        makeSongCurrent(song);
+        const stillWanted = restoresSource ? startRestore() : null;
         setLyrics(snapshot?.lyrics ?? null);
         setCachedCoverUrl(snapshot?.cachedCoverUrl ?? null);
-        setAudioSrc(snapshot?.audioSrc ?? null);
+        setAudioSrc(restoresSource ? null : snapshot?.audioSrc ?? null);
         setPlayQueue(snapshot?.playQueue ?? []);
         setIsFmMode(snapshot?.isFmMode ?? false);
         setIsLyricsLoading(false);
-        setPlayerState(snapshot?.playerState ?? PlayerState.IDLE);
+        // Nothing sounds until the restored source lands: the autoplay intent above starts it then.
+        setPlayerState(restoresSource && snapshot?.playerState !== PlayerState.IDLE
+            ? PlayerState.PAUSED
+            : snapshot?.playerState ?? PlayerState.IDLE);
         setCurrentLineIndex(snapshot?.currentLineIndex ?? -1);
         currentTime.set(snapshot?.currentTime ?? 0);
         setDuration(snapshot?.duration ?? 0);
+        if (!snapshot || !song || !stillWanted) return;
+        // The restore spends pendingResumeTimeRef: mpv starts there, or the deck's loadedmetadata does on the web route.
+        restorePlaybackSourceForSong(song, {
+            audioQuality: useAudioSettingsStore.getState().audioQuality,
+            blobUrlRef,
+            currentOnlineAudioUrlFetchedAtRef,
+            setLyrics,
+            queue: snapshot.playQueue,
+            stillWanted,
+            pendingResumeTimeRef,
+        }).catch(error => console.warn('[Stage] Failed to restore the main song\'s source after the stage', error));
     }, [
+        audioRef,
+        blobUrlRef,
         currentOnlineAudioUrlFetchedAtRef,
         currentTime,
         lastAudioRecoverySourceRef,

@@ -1,4 +1,4 @@
-import { getSeamBoundaryX } from '../../../components/wall/seamPlan';
+import { getSeamBoundaryX, getSeamBoundaryY } from '../../../components/wall/seamPlan';
 import { getBlockSize, getBlockSlots, type WallSlot } from '../../../components/wall/wallSlots';
 import { BRAVAIS_METRICS } from './bravaisConstants';
 import { resolveSlotFace, type BravaisDisplay } from './bravaisDisplay';
@@ -54,16 +54,31 @@ export const isLeftOfAnchor = (column: number, anchorX: number | null, size = ge
     anchorX !== null && getBlockRect(column, 0, size).x < anchorX
 );
 
+/** 块在横的缝上面（进上半，即 left 那个世界层）：与 BravaisWall 分 slot 同一条规则。 */
+export const isAboveAnchor = (row: number, anchorY: number | null, size = getBlockSize(BRAVAIS_METRICS)) => (
+    anchorY !== null && getBlockRect(0, row, size).y < anchorY
+);
+
 /**
  * 底板 SVG 的外框：向左 / 上多盖 PLATE_BLEED；缝右侧第一列向左铺到缝的右边沿（块是一整个 GAP，探索形状还含半条街），
- * 缝左侧那一列止于缝的左边沿（块正好是块尾；探索形状的街有一半在锚点右边，不伸进开口）。
+ * 缝左侧那一列止于缝的左边沿（块正好是块尾；探索形状的街有一半在锚点右边，不伸进开口）。横的缝（anchorY）同理：
+ * 缝下面第一行向上铺到缝的下边沿，缝上面那一行止于缝的上边沿。
  */
-export const getPlateFrame = (column: number, row: number, anchorX: number | null, size = getBlockSize(BRAVAIS_METRICS)): PlateRect => {
+export const getPlateFrame = (
+    column: number,
+    row: number,
+    anchorX: number | null,
+    size = getBlockSize(BRAVAIS_METRICS),
+    anchorY: number | null = null,
+): PlateRect => {
     const block = getBlockRect(column, row, size);
     const isAnchor = (boundary: number) => anchorX !== null && Math.abs(getSeamBoundaryX(boundary, BRAVAIS_METRICS, size.width) - anchorX) < 1e-6;
+    const isRowAnchor = (boundary: number) => anchorY !== null && Math.abs(getSeamBoundaryY(boundary, BRAVAIS_METRICS, size.height) - anchorY) < 1e-6;
     const x = isAnchor(column) ? anchorX! - BRAVAIS_METRICS.gap / 2 : block.x - PLATE_BLEED;
     const right = isAnchor(column + 1) ? anchorX! + BRAVAIS_METRICS.gap / 2 : block.x + block.width;
-    return { x, y: block.y - PLATE_BLEED, width: right - x, height: block.height + PLATE_BLEED };
+    const y = isRowAnchor(row) ? anchorY! - BRAVAIS_METRICS.gap / 2 : block.y - PLATE_BLEED;
+    const bottom = isRowAnchor(row + 1) ? anchorY! + BRAVAIS_METRICS.gap / 2 : block.y + block.height;
+    return { x, y, width: right - x, height: bottom - y };
 };
 
 /** 已挂载的块（slot 列表里出现过的），按首次出现的顺序。 */
@@ -173,8 +188,9 @@ export const buildPlateBlock = (
     expandedSlotKey: string | null,
     reflow: ReadonlyMap<string, PlateRect>,
     anchorX: number | null,
+    anchorY: number | null = null,
 ): PlateBlock => {
-    const frame = getPlateFrame(column, row, anchorX, display.shape.blockSize);
+    const frame = getPlateFrame(column, row, anchorX, display.shape.blockSize, anchorY);
     const holes = collectBlockHoles(column, row, display, expandedSlotKey, reflow);
     return {
         key: `${column},${row}`,

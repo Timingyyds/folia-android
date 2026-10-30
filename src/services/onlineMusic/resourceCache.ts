@@ -16,8 +16,9 @@ export const getSongCacheWithLegacyMigration = async <T>(
     kind: SongResourceKind,
     song: SongResult,
     migrate: (value: T) => MigrationResult<T> = identityMigration,
+    lyricSource?: string | null,
 ): Promise<T | null> => {
-    const cacheKey = getSongResourceCacheKey(kind, song);
+    const cacheKey = getSongResourceCacheKey(kind, song, lyricSource);
     const current = await getFromCache<T>(cacheKey);
     if (current != null) {
         const migrated = migrate(current);

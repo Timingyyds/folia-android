@@ -4,8 +4,6 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
 import android.app.Service;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -134,6 +132,26 @@ public class FoliaPlaybackService extends Service {
         }
     };
 
+    /**
+     * 音频焦点：本服务**不申请、也不重夺**。声音是 WebView 里的 Chromium 放的，它自己有
+     * AudioFocusDelegate 管焦点；同一 App 里再有人申请 AUDIOFOCUS_GAIN，就等于把焦点从
+     * 它手里抢走，而 Chromium **一收到焦点丢失就暂停 {@code <audio>}**。
+     *
+     * 2026-10-30 在真机 logcat 上抓到的完整因果链（用户点播放后约 1.9 秒歌自己停了）：
+     * <pre>
+     * 22:49:00.223  requestAudioFocus()  from ...chromium.content.browser.AudioFocusDelegate   ← 播放开始，Chromium 要焦点
+     * 22:49:00.243  dispatching onAudioFocusChange(-1)  → FoliaPlaybackService                ← 本服务收到 LOSS
+     * 22:49:00.944  requestAudioFocus()  from ...FoliaPlaybackService                         ← 监听器 700ms 后回抢
+     * 22:49:00.946  dispatching onAudioFocusChange(-1)  → ...AudioFocusDelegate                ← Chromium 被夺走焦点
+     * 22:49:00.947  abandonAudioFocus()  from ...AudioFocusDelegate                           ← Chromium 放掉焦点并暂停播放
+     * </pre>
+     *
+     * 也就是说：本服务每夺一次焦点，Chromium 就暂停一次歌——「播两秒就停、再点才好」正是这么来的。
+     * AUDIOFOCUS_GAIN 是独占的，「歌曲永不让位」在 WebView 播放的前提下根本做不到，两边只会互抢。
+     * 所以这里彻底不碰焦点，让 Chromium 按 Android 的标准行为处理（别的 App 放声音时它会正常暂停）。
+     * 不要为了「不让位」把 requestAudioFocus 加回来。
+     */
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -144,27 +162,7 @@ public class FoliaPlaybackService extends Service {
         // 通知栏歌词的节拍：每秒查一次当前行，变了才重画通知。
         mainHandler.postDelayed(lyricTickRunnable, LYRIC_TICK_INTERVAL_MS);
         mediaSession = new MediaSession(this, "FoliaPlayback");
-            // 「歌曲永不让位」策略：本服务主动持有音频焦点（AUDIOFOCUS_GAIN），
-    // 且焦点变化监听器是 no-op —— 游戏/其他 App 抢焦点时本 App 绝不自动暂停。
-    // 前端另有每秒自动续播护栏兜底（svc/nativePlaybackBridge.ts）。
-    try {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            AudioFocusRequest request = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build())
-                    .setOnAudioFocusChangeListener(focusChange -> { /* 刻意不响应：永不暂停 */ })
-                    .setWillPauseWhenDucked(false)
-                    .build();
-            ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).requestAudioFocus(request);
-        } else {
-            //noinspection deprecation
-            ((AudioManager) getSystemService(Context.AUDIO_SERVICE)).requestAudioFocus(
-                    focusChange -> { /* 刻意不响应 */ },
-                    AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        }
-    } catch (Exception ignored) { }
+        // 音频焦点交给 WebView 里的 Chromium 自己管，本服务不申请（原因见上面那段注释）。
 
 mediaSession.setCallback(new MediaSession.Callback() {
             @Override public void onPlay() { emit("play"); }

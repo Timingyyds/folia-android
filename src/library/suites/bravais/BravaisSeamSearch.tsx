@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, type FormEvent, type KeyboardEvent } from 'react';
 import { Search, X } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import type { BravaisLayer } from './bravaisLayer';
 import { setBravaisSearchOpen } from './bravaisHomeUiStore';
+import { useTranslation } from 'react-i18next';
 import { useSearchHistoryStore } from '../../../stores/useSearchHistoryStore';
 import BravaisSeamCrumbs from './BravaisSeamCrumbs';
 
@@ -14,8 +14,8 @@ import BravaisSeamCrumbs from './BravaisSeamCrumbs';
 // 占整条缝（面包屑「书库 › 搜索」），提交才发 provider 请求、换到搜索结果；过滤是漏斗 + 下划线，只收窄当前墙、不发请求。
 
 const BravaisSeamSearch: React.FC<{ layer: BravaisLayer }> = ({ layer }) => {
-    const { t } = useTranslation();
     const inputRef = useRef<HTMLInputElement>(null);
+    const { t } = useTranslation();
     const searchHistory = useSearchHistoryStore(state => state.entries);
     const search = layer.seam.home?.search;
     useEffect(() => {
@@ -79,6 +79,7 @@ const BravaisSeamSearch: React.FC<{ layer: BravaisLayer }> = ({ layer }) => {
                     ))}
                 </div>
             )}
+
             <p className="bravais-search-hint">{search.hint}</p>
             <span className="bravais-form-buttons">
                 <button type="button" className="bravais-chrome-button is-primary" data-bravais-seam-action="submit-search"

@@ -16,6 +16,7 @@ import { deleteCachedSongAudio, getCachedSongAudioBlob, getCachedSongReplayGain,
 import { measureSongAudio, notTheSongWhy } from './wholeSongCheck';
 import { isCachedSongAudioDistrusted } from './playbackRecovery/mediaCacheGuard';
 import { toPlayableAudioUrl } from '../utils/appPlaybackHelpers';
+import { proxyRemoteAudioUrl } from '../audioNative/remoteAudioProxy';
 import { getOnlineProviderIdForSong } from '../utils/appPlaybackGuards';
 import { getProviderSongMetadata } from './onlineMusic/songMetadata';
 import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
@@ -113,9 +114,11 @@ export async function loadOnlineSongAudioSource(
     if (fromCopy) return fromCopy;
 
     if (prefetched?.audioUrl && prefetched.audioUrl !== 'CACHED_IN_DB' && isUrlValid(prefetched.audioUrlFetchedAt)) {
+        // 预取存下的是平台原地址；播放这一刻才换成原生转发地址（本地 token 只在本次运行里有效）。
+        const playable = await proxyRemoteAudioUrl(prefetched.audioUrl);
         return {
             kind: 'ok',
-            audioSrc: prefetched.audioUrl,
+            audioSrc: playable ?? prefetched.audioUrl,
             replayGain: song.replayGain ?? prefetched.replayGain,
             preview: omni.isPreviewAudioSource(prefetched.audioUrl),
         };
@@ -146,7 +149,9 @@ export async function loadOnlineSongAudioSource(
         } catch (error) {
             thrown = error ?? new Error('The audio source request failed');
         }
-        const url = thrown === undefined ? toPlayableAudioUrl(source?.url) : null;
+        const rawUrl = thrown === undefined ? toPlayableAudioUrl(source?.url) : null;
+        // 波点/网易云的 CDN 不发 CORS 头，交给原生转发（Range 照转），否则 <audio> 必然报格式错误。
+        const url = rawUrl ? await proxyRemoteAudioUrl(rawUrl) : null;
         if (url) {
             const replayGain = applyOnlineAudioSourceMetadata(song, source?.replayGain).replayGain;
             updatePrefetchedAudioUrl(song, url, audioQuality, replayGain);
@@ -192,14 +197,20 @@ export async function loadOnlineSongLyrics(
     }
 ): Promise<void> {
     const { isCurrent, onLyrics, onPureMusicChange, onStateChange, onAutoMatchStart, onDone } = callbacks;
-    const lyricCacheKey = getSongResourceCacheKey('lyric', song);
+    // 歌词缓存键带上此刻的首选源：改了首选源就换一份缓存，下一首立刻按新偏好匹配。
+    // 自动匹配关着时偏好不起作用，用 null 保持与旧缓存相同的键。
+    const lyricSourceForCache = (): string | null => {
+        const current = useLyricSettingsStore.getState();
+        return current.autoUseBestLyric ? current.preferredAlternativeLyricSource : null;
+    };
+    const lyricCacheKey = getSongResourceCacheKey('lyric', song, lyricSourceForCache());
     const onlineLyricsState = await loadOnlineLyricsState(song);
   const initialSettingsLyricSettings = useLyricSettingsStore.getState();
 
     if (!isCurrent()) return;
     onStateChange?.(onlineLyricsState);
 
-    const cachedLyrics = await getSongCacheWithLegacyMigration<LyricData>('lyric', song, migrateLyricDataRenderHints);
+    const cachedLyrics = await getSongCacheWithLegacyMigration<LyricData>('lyric', song, migrateLyricDataRenderHints, lyricSourceForCache());
     if (!isCurrent()) return;
     const preferredCachedLyrics = resolveOnlineLyrics(onlineLyricsState, cachedLyrics);
     const hasAuthoritativeLyricsSelection = onlineLyricsState?.lyricsSource === 'imported'

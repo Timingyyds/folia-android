@@ -69,6 +69,10 @@ export interface SubsonicSong {
     suffix: string;
     duration: number; // seconds
     bitRate?: number;
+    // OpenSubsonic fields Navidrome sends; absent on older servers.
+    bitDepth?: number;
+    samplingRate?: number;
+    channelCount?: number;
     path: string;
     playCount?: number;
     discNumber?: number;
@@ -331,6 +335,11 @@ export interface NavidromeSong extends SongResult {
         path: string;
         bitRate?: number;
         suffix: string;
+        // The original file's format, for the HiFi signal path (services/hifi/sourceSpec.ts).
+        contentType?: string;
+        bitDepth?: number;
+        samplingRate?: number;
+        channelCount?: number;
         starred?: string;
         replayGain?: SubsonicSong['replayGain'];
     };

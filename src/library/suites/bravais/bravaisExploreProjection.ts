@@ -1,4 +1,5 @@
 import type { LatticeTile, WallEntryKind } from '../../../components/app/lattice/latticeModel';
+import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
 import { summaryOfSection } from '../../../components/app/lattice/exploreWall';
 import type { WallSection } from '../../../components/app/lattice/wallLayout';
 import type { BravaisItem, BravaisItemKind } from './bravaisLayer';
@@ -17,7 +18,10 @@ const KIND_OF_ENTRY: Record<WallEntryKind, BravaisItemKind> = {
     song: 'track',
 };
 
-/** 探索条目 → 磁贴。key 是条目的 id（歌曲是播放键，集合是 `collection:<类型>:<id>`）；徽标是种类（探索页的词）。 */
+/**
+ * 探索条目 → 磁贴。key 是条目的 id（歌曲是播放键，集合是 `collection:<类型>:<id>`，本机两组里的歌是 `<组 id>:<播放键>`，
+ * 见 buildExploreTiles）；playbackKey 总是歌曲自己的播放键；徽标是种类（探索页的词）。
+ */
 export const projectExploreItems = (tiles: readonly LatticeTile[]): BravaisItem[] => tiles.map((tile) => {
     const item: BravaisItem = {
         key: tile.id,
@@ -31,7 +35,7 @@ export const projectExploreItems = (tiles: readonly LatticeTile[]): BravaisItem[
     const { song } = tile;
     return {
         ...item,
-        playbackKey: tile.id,
+        playbackKey: getPlaybackSongKey(song),
         album: song.album?.name,
         artists: song.artists?.map(artist => artist.name) ?? [],
         durationLabel: formatDuration(song.durationMs),

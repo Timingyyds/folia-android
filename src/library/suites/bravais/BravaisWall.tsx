@@ -11,11 +11,14 @@ import { BRAVAIS_BLOCK_SHAPE } from './bravaisWallShape';
 // 墙的两半：缝锚点左边的 slot 进左边的世界层，右边的进右边的（缝只开在块边界上，没有 slot 跨过它）。两个世界层的
 // transform 由 stage 每帧直接写（bravaisFrame），这里只在裁剪范围、显示的层、聚焦 / 焦点变化时渲染。
 // 透光档（B12b）：每一半先画各自块的实色底板（BravaisBlockPlates，在磁贴之下），底板随世界层一起平移。
+// 信息条横向时缝开在块行边界上（anchorY）：锚点上面的 slot 进 left 层（上半），下面的进 right 层（下半）。
 
 type BravaisWallProps = {
     slots: readonly WallSlot[];
     display: BravaisDisplay | null;
     anchorX: number | null;
+    /** 横的缝的锚点（块行边界的世界 y）；与 anchorX 至多一个不是 null。 */
+    anchorY?: number | null;
     /** 聚焦卡所在块的让位矩形（slot key → 新矩形）。 */
     reflow: ReadonlyMap<string, BravaisTileRect>;
     expandedSlotKey: string | null;
@@ -36,6 +39,7 @@ const BravaisWall: React.FC<BravaisWallProps> = ({
     slots,
     display,
     anchorX,
+    anchorY = null,
     reflow,
     expandedSlotKey,
     focusedSlotKey,
@@ -77,7 +81,8 @@ const BravaisWall: React.FC<BravaisWallProps> = ({
                 handlers={handlers}
             />
         );
-        (anchorX !== null && slot.x < anchorX ? left : right).push(tile);
+        const before = anchorY !== null ? slot.y < anchorY : anchorX !== null && slot.x < anchorX;
+        (before ? left : right).push(tile);
     }
     return (
         <>

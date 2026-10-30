@@ -49,6 +49,7 @@ export type LibrarySuiteId = string;
  * | resync-all-folders | .resyncAllFolders | resync-all-folders |
  * | export-playlist | .exportPlaylist | export-playlist |
  * | edit-entity | .editEntity | edit-entity |
+ * | set-cover | .setCover | set-cover |
  * | organize-song-info | .organizeSongInfo | organize-song-info |
  * | match-song | .matchSong | — |
  * | add-to-playlist | .addToPlaylist | — |
@@ -76,6 +77,7 @@ export type LibraryActionId =
     | 'resync-all-folders'
     | 'export-playlist'
     | 'edit-entity'
+    | 'set-cover'
     | 'organize-song-info'
     | 'match-song'
     | 'add-to-playlist'

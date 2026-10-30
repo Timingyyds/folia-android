@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -23,6 +23,9 @@ import { ThemeParkHeaderActions, ThemeParkHeaderSlot } from './theme-park/ThemeP
 import ThemeParkColumn from './theme-park/ThemeParkColumn';
 import { useThemeParkDraft } from './theme-park/useThemeParkDraft';
 import { useThemeParkPreviewClock } from './theme-park/useThemeParkPreviewClock';
+import type { PreviewSource } from '../visualizer/preview/PreviewSourceSwitch';
+import { useLivePreviewFeed } from '../visualizer/preview/useLivePreviewFeed';
+import { useStillClockPulse } from '../visualizer/preview/stillClockPulse';
 import { useThemeRecommendedColors } from './theme-park/useThemeRecommendedColors';
 import { isDualThemeNameValid } from './theme-park/themeParkDraft';
 
@@ -83,6 +86,11 @@ const ThemePark: React.FC<ThemeParkProps> = ({
     // The app's own theme colours the window; the sample alone shows the theme being edited.
     const { theme: appTheme } = useSettingsKitTheme();
     const [isPaused, setIsPaused] = useState(false);
+    const [previewSource, setPreviewSource] = useState<PreviewSource>('builtin');
+    const previewBoxRef = useRef<HTMLDivElement>(null);
+    // What the player shows now, when the sample is set aside for it; null while it has no lyrics.
+    const livePreview = useLivePreviewFeed({ enabled: previewSource === 'live', paused: isPaused, stageRef: previewBoxRef });
+    const liveContent = livePreview.content;
 
     // Shared theme-editing context (also feeding the quick editor): the live AI / custom themes
     // plus the current song, so a saved AI theme lands on the right cache entry.
@@ -110,7 +118,12 @@ const ThemePark: React.FC<ThemeParkProps> = ({
     });
     const { target, setTarget, mode, draft, safeDraft, baseTheme, reset, buildFinalTheme } = editor;
 
-    const { currentTime, audioPower, audioBands, currentLineIndex } = useThemeParkPreviewClock(visualizerMode, isPaused);
+    // The sample's clock rests while the live picture is drawn.
+    const sampleClock = useThemeParkPreviewClock(visualizerMode, isPaused || liveContent !== null);
+    // The sample, paused, has no change of time for a style mounted anew (a switch from the live picture).
+    useStillClockPulse({ time: sampleClock.currentTime, still: isPaused && liveContent === null, boxRef: previewBoxRef, restartKey: previewSource });
+    const { currentTime, audioPower, audioBands } = liveContent ? livePreview : sampleClock;
+    const currentLineIndex = liveContent ? liveContent.currentLineIndex : sampleClock.currentLineIndex;
 
     const recommendedColors = useThemeRecommendedColors(baseTheme, coverUrl, 4);
 
@@ -176,11 +189,16 @@ const ThemePark: React.FC<ThemeParkProps> = ({
                     subtitleContentMode={subtitleContentMode}
                     lyricsFontScale={lyricsFontScale}
                     currentTime={currentTime}
+                    progressTime={liveContent ? livePreview.playbackTime : sampleClock.currentTime}
                     currentLineIndex={currentLineIndex}
                     audioPower={audioPower}
                     audioBands={audioBands}
                     isPaused={isPaused}
                     onTogglePause={() => setIsPaused(previous => !previous)}
+                    previewSource={previewSource}
+                    onPreviewSourceChange={setPreviewSource}
+                    liveContent={liveContent}
+                    boxRef={previewBoxRef}
                 />
             )}
         >

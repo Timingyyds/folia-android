@@ -11,6 +11,8 @@ import { getPlaybackSongKey } from '../../../../utils/appPlaybackGuards';
 import type { OnlineRecovery, OnlineRecoveryOptions } from '../restore/createOnlineRecoveryController';
 import type { OnlineFailure } from '../../../../services/onlineMusic/failure/onlineFailureCase';
 import { onlineFailureToast } from '../source/onlineFailureToast';
+import { hifiTransport, isHifiRoute } from '../../../../services/hifi/hifiPlayback';
+import { resumeHifiPlayback } from '../../../hifi/hifiRouteTransport';
 
 // src/components/app/playback/bridges/usePlaybackTransportController.ts
 
@@ -81,6 +83,13 @@ export function usePlaybackTransportController({
         }
         const revision = ++transportRevision.current;
         wantsPlayback.current = true;
+
+        // mpv plays this song: no AudioContext, fade or analyser on that route. A replay after the
+        // queue ended (mpv was stopped) goes through playSong, which writes the state itself.
+        if (isHifiRoute()) {
+            if (resumeHifiPlayback()) setPlayerState(PlayerState.PLAYING);
+            return;
+        }
 
         if (activePlaybackContext === 'stage' && stageActiveEntryKind === 'lyrics' && !audioSrc) {
             const currentSyntheticTime = getSyntheticStageLyricsTime();
@@ -199,6 +208,13 @@ export function usePlaybackTransportController({
         }
         transportRevision.current++;
         wantsPlayback.current = false;
+
+        // Before the fade logic: the fade graph belongs to the Web Audio route, and mpv pauses at once.
+        if (isHifiRoute()) {
+            void hifiTransport.pause();
+            setPlayerState(PlayerState.PAUSED);
+            return;
+        }
 
         if (activePlaybackContext === 'stage' && stageActiveEntryKind === 'lyrics' && !audioSrc) {
             const currentSyntheticTime = getSyntheticStageLyricsTime();

@@ -26,6 +26,13 @@ const MOTION_CONTROLS: Array<{ key: Extract<keyof TemperaTuning, 'cameraIntensit
     { key: 'glyphMotion', labelKey: 'options.temperaGlyphMotion' },
 ];
 
+/** 墨染奥行's three strengths; its ink takes the beat effect's own strength in 智能动感. */
+const DEPTH_CONTROLS: Array<{ key: Extract<keyof TemperaTuning, 'depthOfField' | 'depthPan' | 'glyphDepth'>; labelKey: string }> = [
+    { key: 'depthOfField', labelKey: 'options.temperaDepthOfField' },
+    { key: 'depthPan', labelKey: 'options.temperaDepthPan' },
+    { key: 'glyphDepth', labelKey: 'options.temperaGlyphDepth' },
+];
+
 const POST_PROCESS_CONTROLS: Array<{
     key: Extract<keyof TemperaTuning, 'postProcessGrain' | 'postProcessContrast' | 'postProcessRgbShift' | 'postProcessVignette' | 'postProcessLensDistortion'>;
     labelKey: string;
@@ -127,6 +134,21 @@ const TemperaSettingsPanel: React.FC<VisualizerSettingsPanelProps<TemperaTuning>
                     format={times}
                     onChange={glyphSettleStretch => onTemperaTuningChange?.({ glyphSettleStretch })}
                 />
+                <Row label={t('options.temperaDepthStrength')} hint={t('options.temperaDepthStrengthHint')} />
+                {DEPTH_CONTROLS.map(control => (
+                    <SliderRow
+                        {...drag}
+                        sub
+                        key={control.key}
+                        label={t(control.labelKey)}
+                        value={temperaTuning[control.key]}
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        format={times}
+                        onChange={value => onTemperaTuningChange?.({ [control.key]: value })}
+                    />
+                ))}
                 <Row
                     label={t('options.temperaColorMode')}
                     below={(

@@ -11,6 +11,7 @@ import {
 import { bravaisSlotFromKey } from './useBravaisInteractions';
 import type { useBravaisFocus } from './useBravaisFocus';
 import type { BravaisFrameState } from './useBravaisFrame';
+import { seamPointOf } from './bravaisAnchor';
 
 // src/library/suites/bravais/useBravaisPlayingCard.ts
 // 实测反馈 fb3：从墙上播放之后，那首歌的聚焦卡保持展开；从播放页、Lattice、别的视图回来（stage 重新挂载）或返回到这一层时，
@@ -82,12 +83,11 @@ export const useBravaisPlayingCard = ({
     useEffect(() => {
         if (!display || isSettling || seq === null || pendingSeqRef.current !== seq) return;
         const memory = readBravaisPlayingCard();
-        const { anchorX, center } = frameRef.current;
         const decision = resolveBravaisPlayingCardRestore({
             memory,
             display,
             focusedSlotKey: focusedRef.current,
-            near: { x: anchorX ?? center.x, y: center.y },
+            near: seamPointOf(frameRef.current),
         });
         if (decision.kind === 'wait') return;
         pendingSeqRef.current = null;

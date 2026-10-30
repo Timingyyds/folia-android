@@ -10,7 +10,7 @@ import type {
 } from './bravaisSeamModels';
 import { BravaisSeamFlipText } from './BravaisSeamFlip';
 import { useBravaisReducedTransitions } from './bravaisMotion';
-import { bravaisPopMotion, bravaisRevealMotion } from './bravaisSeamMotion';
+import { bravaisPopMotion, bravaisRevealMotion, seamPopAnchorFor } from './bravaisSeamMotion';
 import './bravaisCollection.css';
 
 // src/library/suites/bravais/BravaisSeamCollection.tsx
@@ -118,8 +118,9 @@ export const BravaisSeamCollectionMenu: React.FC<{
     const { t } = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
     const reduced = useBravaisReducedTransitions();
-    const pop = bravaisPopMotion('above', reduced);
     const anchorRef = useRef<HTMLDivElement>(null);
+    // 横的信息条在视口上半时菜单往下弹（按钮行一直挂着，anchorRef 在打开菜单的那次渲染里已经有值）。
+    const pop = bravaisPopMotion(seamPopAnchorFor(anchorRef.current), reduced);
     const reveal = bravaisRevealMotion(reduced);
     const items = collection?.menu ?? [];
     const hasMenu = items.length > 0 || Boolean(fold);

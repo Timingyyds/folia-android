@@ -19,7 +19,7 @@ import type { BravaisBackStep } from './bravaisBack';
 // - 左上角隐藏式返回（WallBackButton concealed）：做什么由 stage 按 bravaisBack 定——不在首页根层时与缝里的 ‹ 同一个返回
 //   （先关面板 / 表单，再退层），可访问名「返回」；首页根层有歌时回到播放页（「回到播放页」），没有歌时不画。
 //   z-index 在缝之下：缝正好开在左上角时让缝的按钮在上面。
-// - 右下角工具按钮（WallToolsButton）：结构与 Lattice 一致，公共部分（洗牌、主题、队列、播放器四格与音量滑条）由
+// - 右下角工具按钮（WallToolsButton）：结构与 Lattice 一致，公共部分（洗牌、主题、队列、播放器、设置五格与音量滑条）由
 //   components/wall 从 App 的墙面工具宿主（wallToolsHost）组装，这里只给 bravais 自己的三样——
 //   1. above：工具按钮正上方的定位按钮（GridLocateButton，与网格集合页、Lattice 的同一颗；按下走外观动作 locate-playing）；
 //   2. destination：前往 Lattice（宿主的 onOpenLattice，首页工具格「队列拼贴」同一个入口；私人 FM 下禁用并写原因）；

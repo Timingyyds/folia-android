@@ -13,6 +13,8 @@ import { useSettingsModalStore } from '../../stores/useSettingsModalStore';
 import { useAppViewStore } from '../../stores/useAppViewStore';
 import { useInteractionSettingsStore } from '../../stores/useInteractionSettingsStore';
 import { resolveCustomShortcutCommand } from './customShortcut';
+import { useGlobalShortcuts } from './globalShortcuts/useGlobalShortcuts';
+import { runGlobalShortcutCommand } from './globalShortcuts/runGlobalShortcutCommand';
 
 // src/components/command-palette/useCommandPalette.ts
 import { effectiveKeyCode, hasOpenSheet, isCommandPaletteShortcut, isTextEntryTarget } from '../../utils/keyboardTargets';
@@ -265,6 +267,15 @@ export const useCommandPalette = ({
         recordRecentCommand(command);
         void command.execute('', liveContext);
     }, [openCommand, recordRecentCommand]);
+
+    // The desktop app's system-wide playback shortcuts. Asked against the live context like a pinned
+    // command, but not recorded: volume and next track pressed dozens of times a day would push
+    // everything else out of the palette's recent list and its ranking.
+    // Mod commands bound there run through their palette entry like the host's (runGlobalShortcutCommand).
+    const runGlobalShortcut = useCallback((commandId: string) => {
+        runGlobalShortcutCommand(commandId, contextRef.current);
+    }, []);
+    useGlobalShortcuts(runGlobalShortcut);
 
     const executeMatch = useCallback(async (index: number) => {
         if (isExecuting) {

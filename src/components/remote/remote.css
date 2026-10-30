@@ -3,9 +3,10 @@
    on the right, and 174 px left of it for the sleeve, the look of the window when not in use
    (with the switch "expand cover" on). Every colour is the ink (--remote-ink) at some strength; the
    theme and the background mode only change the ink and the card under it. What the pointer
-   lights up hangs on [data-lit]; the keys making way for the line when not in use on [data-idle];
-   the opened card and the large cover on [data-sleeve]. A rule on a look carries the transition
-   into that look: into the sleeve is slow and calm (0.62 s), back into use is quick (0.32 s). */
+   lights up hangs on [data-lit]; the keys making way for the line when not in use, and the
+   transparent background's bare look, on [data-idle]; the opened card and the large cover on
+   [data-sleeve]. A rule on a look carries the transition into that look: into the sleeve is slow
+   and calm (0.62 s), back into use is quick (0.32 s). */
 
 .remote-window {
   --remote-ink: 255, 255, 255;
@@ -159,8 +160,11 @@
   background: linear-gradient(180deg, rgba(9, 9, 13, 0.46) 0%, rgba(9, 9, 13, 0.7) 100%);
 }
 
-/* Transparent: no card. A page in a transparent window cannot blur what is behind the window,
-   so the sleeve's type sits on a soft dark shade, and a dark base comes up for the card in use. */
+/* Transparent: no card. The idle type (in the sleeve or not) stands on what is behind the window
+   with only its own thin shadow, and a dark base comes up for the card in use. */
+
+/* The settings switch "text shade" (off by default). A page in a transparent window cannot blur
+   what is behind the window, so with it on the idle type sits on a soft dark shade. */
 .remote-cloud {
   position: absolute;
   border-radius: 26px;
@@ -181,7 +185,7 @@
   transition: opacity 320ms ease;
 }
 
-.remote-window[data-sleeve='false'] .remote-glass {
+.remote-window[data-idle='false'] .remote-glass {
   opacity: 1;
   transition: opacity 140ms ease-out;
 }
@@ -190,23 +194,23 @@
   opacity: 0;
 }
 
-.remote-window[data-sleeve='false'] .remote-cloud {
+.remote-window[data-idle='false'] .remote-cloud {
   opacity: 0;
   transition: opacity 140ms ease-out;
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] {
+.remote-window[data-bg='transparent'][data-idle='true'] {
   --remote-unsung: rgba(255, 255, 255, 0.62);
   --remote-second: rgba(255, 255, 255, 0.9);
   --remote-next: rgba(255, 255, 255, 0.62);
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'][data-paused='true'] {
+.remote-window[data-bg='transparent'][data-idle='true'][data-paused='true'] {
   --remote-sung: rgba(255, 255, 255, 0.78);
   --remote-unsung: rgba(255, 255, 255, 0.5);
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] :is(
+.remote-window[data-bg='transparent'][data-idle='true'] :is(
   .remote-song,
   .remote-lyric__hero,
   .remote-lyric__roma,
@@ -271,7 +275,8 @@
   border-radius: 48px;
   overflow: hidden;
   background: rgba(var(--remote-ink), 0.1);
-  transition: transform 300ms var(--remote-snap), border-radius 300ms var(--remote-snap);
+  transition: transform 300ms var(--remote-snap), border-radius 300ms var(--remote-snap),
+    box-shadow 300ms var(--remote-snap);
 }
 
 .remote-cover::after {
@@ -295,7 +300,8 @@
 .remote-window[data-sleeve='true'] .remote-cover {
   transform: none;
   border-radius: 18px 0 0 18px;
-  transition: transform 560ms var(--remote-settle) 60ms, border-radius 560ms var(--remote-settle) 60ms;
+  transition: transform 560ms var(--remote-settle) 60ms, border-radius 560ms var(--remote-settle) 60ms,
+    box-shadow 560ms var(--remote-settle) 60ms;
 }
 
 .remote-window[data-sleeve='true'] .remote-cover::after {
@@ -303,13 +309,16 @@
   transition: box-shadow 560ms var(--remote-settle) 60ms;
 }
 
-/* No card around it in the sleeve: rounded all round, and lifted off what is behind the window. */
+/* No card around it: lifted off what is behind the window. */
 .remote-window[data-bg='transparent'] .remote-cover {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
 }
 
+/* In the sleeve rounded all round. The window leaves it 4 px, which would cut that shadow square,
+   so it keeps only the type's thin shadow (on .remote-song). */
 .remote-window[data-bg='transparent'][data-sleeve='true'] .remote-cover {
   border-radius: 18px;
+  box-shadow: none;
 }
 
 .remote-cover__face,
@@ -438,11 +447,11 @@
   color: rgba(var(--remote-ink), 0.46);
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] .remote-song__title {
+.remote-window[data-bg='transparent'][data-idle='true'] .remote-song__title {
   color: #fff;
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] .remote-song__artist {
+.remote-window[data-bg='transparent'][data-idle='true'] .remote-song__artist {
   color: rgba(255, 255, 255, 0.78);
 }
 
@@ -514,7 +523,7 @@
 }
 
 /* With no card behind it the dimmed line needs the paused line's strength to stay readable. */
-.remote-window[data-bg='transparent'][data-sleeve='true'] .remote-lyric__pair[data-dim='true'] {
+.remote-window[data-bg='transparent'][data-idle='true'] .remote-lyric__pair[data-dim='true'] {
   --remote-sung: rgba(255, 255, 255, 0.78);
   --remote-unsung: rgba(255, 255, 255, 0.5);
 }
@@ -565,7 +574,11 @@
   padding-bottom: 2px;
 }
 
-.remote-lyric__word[data-fill='part'] {
+/* Every piece is painted the same way, sung, unsung or in between: text drawn as a clip of its
+   background is smoothed otherwise than text drawn in a colour, so a piece that changed between the
+   two at the start and the end of its fill looked a little different there. */
+.remote-lyric__word,
+.remote-lyric__gap {
   color: transparent;
   background-image: linear-gradient(
     90deg,
@@ -576,8 +589,6 @@
   background-clip: text;
 }
 
-.remote-lyric__word[data-fill='full'],
-.remote-lyric__gap[data-fill='full'],
 .remote-lyric__whole {
   color: var(--remote-sung);
 }
@@ -595,7 +606,7 @@
   color: rgba(var(--remote-ink), 0.44);
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] .remote-lyric__roma {
+.remote-window[data-bg='transparent'][data-idle='true'] .remote-lyric__roma {
   color: rgba(255, 255, 255, 0.8);
 }
 
@@ -761,12 +772,12 @@
   transition: background-color 140ms ease-out;
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] .remote-line__track {
+.remote-window[data-bg='transparent'][data-idle='true'] .remote-line__track {
   background: rgba(255, 255, 255, 0.4);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.38), 0 1px 5px rgba(0, 0, 0, 0.45);
 }
 
-.remote-window[data-bg='transparent'][data-sleeve='true'] .remote-line__fill {
+.remote-window[data-bg='transparent'][data-idle='true'] .remote-line__fill {
   background: #fff;
 }
 

@@ -5,9 +5,32 @@ import { getPlaybackSongKey } from '../../utils/appPlaybackGuards';
 // Keeps playback and analysis on one representation for the lifetime of the current renderer.
 
 const representations = new Map<string, PlaybackRepresentation>();
+const registeredListeners = new Set<(representation: PlaybackRepresentation) => void>();
 
 export const registerPlaybackRepresentation = (representation: PlaybackRepresentation): void => {
     representations.set(representation.songKey, representation);
+    // Told after it is in: a listener reads the song's analysis key, which names it from now on. A
+    // listener that throws must not undo the registration - the caller is the playback recovery.
+    registeredListeners.forEach(listener => {
+        try {
+            listener(representation);
+        } catch (error) {
+            console.warn('[PlaybackRecovery] a representation listener failed', error);
+        }
+    });
+};
+
+/**
+ * Called with each representation as it registers. A song's analysis key changes at that moment
+ * (`getPlaybackAnalysisTarget`), so whatever was measured under the old key is not found under the new.
+ */
+export const onPlaybackRepresentationRegistered = (
+    listener: (representation: PlaybackRepresentation) => void,
+): (() => void) => {
+    registeredListeners.add(listener);
+    return () => {
+        registeredListeners.delete(listener);
+    };
 };
 
 export const getPlaybackRepresentation = (

@@ -10,10 +10,11 @@ import { isCacheableAudioResponse } from '../playbackRecovery/mediaCacheGuard';
 import type { PlaybackRepresentation } from '../../types/playbackRecovery';
 import { getPlaybackAnalysisKey, getPlaybackAnalysisTarget } from '../playbackRecovery/representationRegistry';
 import { mayStoreSongAudio, whyNotTheSong, whyNotTheSongPlayed, whyPreviewClip } from '../wholeSongCheck';
-import { analyseTrackOffThread, melSpectrogramOffThread } from './analysisOffThread';
+import { analyseTrackOffThread, measureProgramLoudnessOffThread, melSpectrogramOffThread } from './analysisOffThread';
 import { analyseBeatGrid, canRunBeatThis } from '../analysis/beatThis';
 import { getTrackBeatGrid } from '../analysis/beatGrid';
 import { decodeAtRate, readLocalTrackFile, toMidSide } from '../analysis/trackAudio';
+import { decodeTrackAtRate, giveTrackBytes, trackBytesFit } from '../analysis/trackBytes';
 import {
     measureEdges,
     PROFILE_SAMPLE_RATE,
@@ -31,6 +32,8 @@ import {
 // holds the track, a local file, or - when song caching is on - the one download that would have
 // happened after playback, moved earlier and written to the same cache. With caching off, an online
 // track is simply not analysed and the blend falls back to the live measurement of the outgoing deck.
+// A library server's stream (Navidrome) is never cached, so only its front is read, whatever the
+// setting: see `downloadRuleOf`.
 
 const profiles = new Map<string, TrackProfile | null>();
 const inFlight = new Set<string>();
@@ -45,6 +48,40 @@ const inFlight = new Set<string>();
 const skipped = new Map<string, string>();
 /** Same order of magnitude as the prefetch cache; each entry is a couple of hundred bytes. */
 const MAX_PROFILES = 200;
+
+/**
+ * What became of the last request for a track that left no profile behind: dropped for being out of
+ * scope, or skipped for want of bytes. A failure needs no entry - it is a null profile. Only for
+ * `describeProfileState`.
+ *
+ * Kept because "no profile" alone could not tell a track never asked for from one asked for and
+ * turned away, and the first is a bug while the second is the bandwidth rule working. Every local
+ * and Navidrome transition planned blind for months, and the log said "never analysed" - the same
+ * words a track still waiting its turn prints. Nothing is recorded for a track nobody asked about.
+ */
+const outcomes = new Map<string, string>();
+const noteOutcome = (songKey: string, outcome: string) => rememberCapped(outcomes, songKey, outcome);
+
+/**
+ * Downloads whose server answered a range request with the whole file, by the song and its URL.
+ *
+ * A transcoding server does this every time - the stream it makes has no length to take a range of -
+ * so without it every prefetch pass (one per song start) asked again, and the server started a
+ * transcode for the analyser to cut off. A URL names one stream, so the answer holds for the session.
+ */
+const rangeRefusedDownloads = new Map<string, string>();
+const RANGE_REFUSED = 'the server would not serve a partial range, and a full download is not ours to spend';
+
+/** Sets `key`, keeping no more entries than there are profiles. */
+const rememberCapped = (map: Map<string, string>, key: string, value: string) => {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > MAX_PROFILES) {
+        const oldest = map.keys().next().value;
+        if (oldest === undefined) break;
+        map.delete(oldest);
+    }
+};
 
 /**
  * Files found this session not to be their song (wholeSongCheck.ts), with why: a download by the
@@ -84,6 +121,11 @@ let queue: Promise<unknown> = Promise.resolve();
  * Set by the prefetcher, which is the only thing that knows where the queue is. Checked when a task
  * reaches the front rather than when it is enqueued, because the point is precisely that the answer
  * changes while it waits.
+ *
+ * Keyed by the song, not by the analysis key. The analysis key changes when a transcode registers
+ * (getPlaybackAnalysisTarget), and the scope is set at the track change, before playback has found it
+ * cannot play the file - so a scope of analysis keys dropped the one request that reads the transcode,
+ * for a track that never left the scope.
  */
 let wanted: ReadonlySet<string> = new Set();
 
@@ -91,11 +133,11 @@ let wanted: ReadonlySet<string> = new Set();
  * Narrows analysis to these tracks. Anything queued for a track not in the list is dropped when its
  * turn comes; anything already running finishes, since a decode cannot be taken back mid-way.
  *
- * Dropping is safe to do at any time: nothing is remembered for a dropped track, so it is simply
- * measured on a later pass if it comes back into range.
+ * Dropping is safe to do at any time: nothing measured is remembered for a dropped track (only that
+ * it was dropped, for the log), so it is simply measured on a later pass if it comes back into range.
  */
 export const setAnalysisScope = (songs: readonly SongResult[]): void => {
-    wanted = new Set(songs.map(getPlaybackAnalysisKey));
+    wanted = new Set(songs.map(getPlaybackSongKey));
 };
 
 /**
@@ -115,9 +157,50 @@ export const profilesSettled = (): Promise<unknown> => queue;
 
 const storageKey = (songKey: string) => `automix_profile_${songKey}`;
 
+const profileListeners = new Set<() => void>();
+
+/** Told each time a track's profile is measured or read back; the volume balance waits on its loudness. */
+export const onTrackProfile = (listener: () => void): (() => void) => {
+    profileListeners.add(listener);
+    return () => { profileListeners.delete(listener); };
+};
+
+/** A stored profile as it is on disk, read only. The volume balance takes an old whole-track reading from it. */
+export const readStoredTrackProfile = (analysisKey: string): Promise<TrackProfile | null> => (
+    getFromCache<TrackProfile>(storageKey(analysisKey))
+);
+
+/** A whole track's BS.1770 loudness, measured ahead of the rest of its profile, and when each step ended (performance.now()). */
+export interface ProgramMeasurement {
+    /** The analysis key. */
+    key: string;
+    song: SongResult;
+    loudness: number;
+    peak: number;
+    queuedAt: number;
+    startedAt: number;
+    bytesAt: number;
+    decodedAt: number;
+    measuredAt: number;
+    /** When the full profile was done, or null when it failed. */
+    profiled: Promise<number | null>;
+}
+
+const programListeners = new Set<(measurement: ProgramMeasurement) => void>();
+
+/** Told as soon as a whole track's loudness is measured, before the beat model runs; the volume balance listens. */
+export const onProgramMeasured = (listener: (measurement: ProgramMeasurement) => void): (() => void) => {
+    programListeners.add(listener);
+    return () => { programListeners.delete(listener); };
+};
+
 const remember = (songKey: string, profile: TrackProfile | null) => {
     profiles.delete(songKey);
     profiles.set(songKey, profile);
+    profileListeners.forEach(listener => listener());
+    // The answer replaces whatever an earlier request came to; left behind, it would be read back once
+    // this profile is evicted, older than the measurement that superseded it.
+    outcomes.delete(songKey);
     while (profiles.size > MAX_PROFILES) {
         const oldest = profiles.keys().next().value;
         if (oldest === undefined) break;
@@ -146,6 +229,30 @@ export const getTrackProfile = (song: SongResult | null | undefined): TrackProfi
     song ? profiles.get(getPlaybackAnalysisKey(song)) ?? null : null
 );
 
+/**
+ * Where a track's analysis stands, in words for a log line: measured, still queued, or why not.
+ * "never requested" is the one that points at a caller rather than at the track.
+ */
+export const describeProfileState = (song: SongResult): string => {
+    const analysisKey = getPlaybackAnalysisKey(song);
+    const state = describeKey(analysisKey);
+    if (state) return state;
+    // Transcoded since it was looked at: the original's key holds what became of that, and saying it
+    // keeps a track measured before its transcode from reading as one nobody asked about.
+    const songKey = getPlaybackSongKey(song);
+    const original = songKey === analysisKey ? null : describeKey(songKey);
+    return original ? `nothing measured from its transcode (the original file: ${original})` : 'never requested';
+};
+
+/** What `describeProfileState` says of one key, or null when nothing was ever asked of it. */
+const describeKey = (key: string): string | null => {
+    const profile = profiles.get(key);
+    if (profile) return profile.partial ? 'measured (head only)' : 'measured';
+    if (inFlight.has(key)) return 'queued, not finished yet';
+    if (profiles.has(key)) return 'could not be measured';
+    return outcomes.get(key) ?? null;
+};
+
 interface ProfileRequest {
     song: SongResult;
     /**
@@ -173,7 +280,9 @@ const PREFIX_BYTES = 1_572_864;
 
 /** Either the bytes, or the reason there are none - which is the more useful answer most days. */
 type BytesResult =
-    | { bytes: ArrayBuffer; partial: boolean }
+    // `held`: already held to the whole-song rule on the way in (or a local file, which is the song),
+    // so the hand-over to the shared bytes need not check it again (from the PR #750 review, B6).
+    | { bytes: ArrayBuffer; partial: boolean; held?: boolean }
     | { skipped: string };
 
 /**
@@ -190,7 +299,7 @@ const readPrefix = async (audioUrl: string): Promise<BytesResult> => {
     const response = await fetch(audioUrl, { headers: { Range: `bytes=0-${PREFIX_BYTES - 1}` } });
     if (response.status !== 206) {
         await response.body?.cancel();
-        return { skipped: 'the server would not serve a partial range, and a full download is not ours to spend' };
+        return { skipped: RANGE_REFUSED };
     }
     return { bytes: await response.arrayBuffer(), partial: true };
 };
@@ -212,6 +321,24 @@ const keepWithProvider = async (song: SongResult, audioUrl: string | null | unde
     const kept = await (store ? keepProviderSongAudio : hasProviderKeptSongAudio)(song, audioUrl);
     if (kept) notifyAudioCached(getSongResourceCacheKey('audio', song), audioUrl);
     return kept;
+};
+
+/**
+ * What reading a track's URL for analysis costs, which decides how much of it may be read.
+ *
+ * - `free`: a blob: or file: URL, or a song from this machine. Already here, so read whole whatever
+ *   the setting says, and never stored - there is nothing to download again.
+ * - `library`: a library server's stream (Navidrome). Only the front of it, whatever the setting:
+ *   the media cache keeps online songs only, so a whole read would be thrown away after measuring -
+ *   every track downloaded a second time, beside the stream playing it. That is what happened while
+ *   it counted as "local" for not being an online song. Its ending is measured as it plays out.
+ * - `online`: a real download, the whole file only with song caching on, and then stored.
+ */
+export const downloadRuleOf = (song: SongResult, audioUrl: string): 'free' | 'library' | 'online' => {
+    if (audioUrl.startsWith('blob:') || audioUrl.startsWith('file:')) return 'free';
+    const kind = getPlaybackSourceRef(song).kind;
+    if (kind === 'online') return 'online';
+    return kind === 'navidrome' ? 'library' : 'free';
 };
 
 const readBytes = async (
@@ -248,14 +375,14 @@ const readBytes = async (
     if (cached) {
         const notTheSong = await whyNotTheSong(song, null, cached);
         if (notTheSong) return { skipped: noteNotTheSong(notTheSongCopies, copyKey, `the copy in the media cache is ${notTheSong}`) };
-        return { bytes: await cached.arrayBuffer(), partial: false };
+        return { bytes: await cached.arrayBuffer(), partial: false, held: true };
     }
 
     if (!audioUrl) {
-        // A local track with no URL in hand (the next-up head: prefetch skips local files) is read
+        // A local track with no URL in hand (the prefetcher has none to give for a local file) is read
         // off its own file handle (analysis/trackAudio.ts).
         const file = await readLocalTrackFile(song);
-        if (file) return { bytes: file, partial: false };
+        if (file) return { bytes: file, partial: false, held: true };
         return { skipped: 'not cached yet and no URL to read it from' };
     }
     // Before any read: a clip its provider marked is not downloaded only to be refused.
@@ -264,10 +391,8 @@ const readBytes = async (
     const downloadKey = `${getPlaybackSongKey(song)} ${audioUrl}`;
     const knownDownload = notTheSongDownloads.get(downloadKey);
     if (knownDownload) return { skipped: knownDownload };
-    // A blob: or file: URL is already on this machine, so reading it is free whatever the setting
-    // says. Anything else is a real download and needs a reason.
-    const isLocal = audioUrl.startsWith('blob:') || audioUrl.startsWith('file:')
-        || getPlaybackSourceRef(song).kind !== 'online';
+    const rule = downloadRuleOf(song, audioUrl);
+    const isLocal = rule === 'free';
 
     try {
         // A provider with a cache of its own is asked to keep the file before it is read, so the
@@ -276,13 +401,21 @@ const readBytes = async (
         const ownCache = !isLocal && keepsOwnSongAudio(song);
         const kept = ownCache && await keepWithProvider(song, audioUrl, enableMediaCache);
 
-        if (!isLocal && !enableMediaCache && !kept) {
+        if (rule === 'library' || (!isLocal && !enableMediaCache && !kept)) {
             // Song caching is off, so the full file would be bandwidth nobody agreed to. Take the
             // front of it instead: less than the transition is worth, and it still answers the
             // questions about how this track STARTS - which is what the chooser needs from the
-            // track it is blending into.
+            // track it is blending into. How it ends is filled in once it has played out
+            // (`recordPlayedTail`). A library stream takes this road whatever the setting: nothing
+            // keeps it, so a whole read would be the second download of every track.
             if (hasStoredPartial) return { skipped: '' };
-            return await readPrefix(audioUrl);
+            const refused = rangeRefusedDownloads.get(downloadKey);
+            if (refused) return { skipped: refused };
+            const prefix = await readPrefix(audioUrl);
+            if ('skipped' in prefix && prefix.skipped === RANGE_REFUSED) {
+                rememberCapped(rangeRefusedDownloads, downloadKey, RANGE_REFUSED);
+            }
+            return prefix;
         }
 
         const response = await fetch(audioUrl);
@@ -300,7 +433,7 @@ const readBytes = async (
             });
             return { skipped: 'the download was not audio' };
         }
-        if (!isLocal && !ownCache) {
+        if (rule === 'online' && !ownCache) {
             // The same write the audio bridge would have done after playback, under the same check
             // (wholeSongCheck.ts: a preview clip, or a file under half the song, is not stored).
             // Fetching once and feeding both is the whole reason a full read is allowed here at all.
@@ -318,6 +451,7 @@ const readBytes = async (
             // the level the quality option asks for later.
             await saveSongAudioLevel(song, level);
             console.log(`[Automix] "${song.name}" saved to the media cache from the analysis read, fetched at ${level ?? 'an unknown level'}`);
+            return { bytes: await blob.arrayBuffer(), partial: false, held: true };
         }
         return { bytes: await blob.arrayBuffer(), partial: false };
     } catch (error) {
@@ -335,6 +469,9 @@ const readBytes = async (
 export const ensureTrackProfile = async (request: ProfileRequest): Promise<void> => {
     // Resolved together: the bytes read below must be the representation this key names.
     const { key: songKey, representation } = getPlaybackAnalysisTarget(request.song);
+    // The scope is kept by song (see `wanted`): a transcode registering moves `songKey` - which, despite
+    // its name, is the analysis key - and not this.
+    const scopeKey = getPlaybackSongKey(request.song);
     if (inFlight.has(songKey)) return;
     if (profiles.has(songKey) && !needsGrid(request, profiles.get(songKey))) {
         // Only asked, never stored from here: this runs on every track change, ahead of the
@@ -343,13 +480,19 @@ export const ensureTrackProfile = async (request: ProfileRequest): Promise<void>
         return;
     }
     inFlight.add(songKey);
+    const queuedAt = performance.now();
+    let profiled: (at: number | null) => void = () => undefined;
 
     queue = queue.then(async () => {
+        const startedAt = performance.now();
         try {
             // Asked here, at the front of the queue, not when this was enqueued - see `wanted`. The
             // listener may have skipped past this track while it was waiting its turn, and the whole
             // point is to not spend a decode and a model pass on where they no longer are.
-            if (!wanted.has(songKey)) return;
+            if (!wanted.has(scopeKey)) {
+                noteOutcome(songKey, 'dropped, not the current or the next track when its turn came');
+                return;
+            }
 
             const stored = await getFromCache<TrackProfile>(storageKey(songKey));
             // A whole-file profile names the length of the file it measured. One under half the
@@ -380,6 +523,7 @@ export const ensureTrackProfile = async (request: ProfileRequest): Promise<void>
             }
 
             const result = await readBytes(request, representation, Boolean(usable?.partial));
+            const bytesAt = performance.now();
             if ('skipped' in result) {
                 if (usable) {
                     remember(songKey, usable);
@@ -392,16 +536,64 @@ export const ensureTrackProfile = async (request: ProfileRequest): Promise<void>
                     skipped.set(songKey, result.skipped);
                     console.log(`[Automix] not analysing "${request.song.name}": ${result.skipped}`);
                 }
+                noteOutcome(songKey, `skipped: ${result.skipped || 'nothing more to read'}`);
                 return;
             }
             skipped.delete(songKey);
             // Asked a second time, because reading the bytes is the slow part: a full track off the
             // media cache or the network is seconds, and everything after this line - the decode, the
             // spectrogram, the beat model - is the expensive part it would be buying for nobody.
-            if (!wanted.has(songKey)) return;
+            // Asked before the bytes are kept too (from the PR #750 review): a dropped song's bytes would
+            // push the current or next song's out of the shared cache.
+            if (!wanted.has(scopeKey)) {
+                noteOutcome(songKey, 'dropped, not the current or the next track when its turn came');
+                return;
+            }
 
-            const buffer = await decodeAtRate(result.bytes, PROFILE_SAMPLE_RATE);
+            // The whole song, read or downloaded under this file's rules, is kept for 智能动感模式 and
+            // the stems (analysis/trackBytes.ts), so neither reads or streams it again. Only kept from
+            // here, never taken: this read's download is also the media-cache write above, which a
+            // copy handed over from elsewhere would skip.
+            // A file its provider keeps was not held to the whole-song rule on the way in: held here,
+            // on a copy taken now (the decode below detaches the read), without holding the decode up.
+            // Only a file that would be kept is copied, and that copy is the one kept (from the PR #750
+            // review: a copy for the cache, then another inside it, and a file over the cache's limit
+            // copied only to be thrown away).
+            // Checked here only when the read did not check it already (`held`): a file its provider
+            // keeps, the playback representation, or a blob: / file: URL (from the PR #750 review, B6).
+            if (!result.partial && trackBytesFit(result.bytes.byteLength)) {
+                const copy = result.bytes.slice(0);
+                if (result.held) {
+                    giveTrackBytes(songKey, copy);
+                } else {
+                    const song = request.song;
+                    void whyNotTheSong(song, null, new Blob([copy]))
+                        .then((notTheSong) => { if (!notTheSong) giveTrackBytes(songKey, copy); })
+                        .catch(() => undefined);
+                }
+            }
+
+            // A head-only read is not the track its key names: decoded on its own, so a whole-track
+            // decode of the same key and rate cannot join it and store the head's beats as the track's
+            // (from the PR #750 review).
+            const buffer = result.partial
+                ? await decodeAtRate(result.bytes, PROFILE_SAMPLE_RATE)
+                : await decodeTrackAtRate(songKey, PROFILE_SAMPLE_RATE, result.bytes, decodeAtRate, 'automix profile', 'own');
             const channels = buffer ? toMidSide(buffer) : null;
+            // The volume balance's reading, ahead of the beat model: a whole track is read once, so its
+            // loudness is known seconds sooner than the profile it also goes into.
+            if (buffer && channels && !result.partial) {
+                const decodedAt = performance.now();
+                const program = await measureProgramLoudnessOffThread(channels.mid, channels.side, buffer.sampleRate);
+                if (program) {
+                    const measurement: ProgramMeasurement = {
+                        key: songKey, song: request.song, ...program, queuedAt, startedAt, bytesAt, decodedAt,
+                        measuredAt: performance.now(),
+                        profiled: new Promise<number | null>((resolve) => { profiled = resolve; }),
+                    };
+                    programListeners.forEach(listener => listener(measurement));
+                }
+            }
             // The beat grid, from a model rather than autocorrelation, when this build has one. Asked
             // for here rather than inside `analyseTrack` because it is the impure step - it crosses
             // into the main process. Null keeps `analyseTrack` on the estimator it has always used,
@@ -434,6 +626,7 @@ export const ensureTrackProfile = async (request: ProfileRequest): Promise<void>
                 })
                 : null;
             remember(songKey, profile);
+            profiled(profile ? performance.now() : null);
             if (profile) {
                 await saveToCache(storageKey(songKey), profile);
                 // The analysed length is printed for the partial case on purpose: "nothing found"
@@ -480,6 +673,7 @@ export const ensureTrackProfile = async (request: ProfileRequest): Promise<void>
         } catch (error) {
             console.warn('[Automix] track analysis failed', error);
             remember(songKey, null);
+            profiled(null);
         } finally {
             inFlight.delete(songKey);
         }
@@ -520,6 +714,10 @@ export const recordPlayedTail = (
     /** What the deck played from. */
     src: string | null,
 ): void => {
+    // The song's own key, not the analysis key, and on purpose. A head-only profile is only ever made
+    // from the original file, before any transcode registers: a transcode is read whole, so the key
+    // naming it never holds a head-only profile to complete. What the deck played may be that
+    // transcode - lossless, on the original's timeline - so its ending is the original's ending.
     const songKey = getPlaybackSongKey(song);
     const known = profiles.get(songKey);
     if (!known || !known.partial) return;
@@ -553,6 +751,8 @@ export const recordPlayedTail = (
         outroTone: null,
         outroKey: null,
         outroBpm: null,
+        // Nor does it give a BS.1770 reading or a peak, so those stay the head's, and say so.
+        programFromHead: true,
     };
     remember(songKey, profile);
     void saveToCache(storageKey(songKey), profile);
@@ -570,6 +770,8 @@ export const clearTrackProfileRuntime = () => {
     skipped.clear();
     notTheSongDownloads.clear();
     notTheSongCopies.clear();
+    // What the requests came to goes with the profiles: kept, it would describe a session that is gone.
+    outcomes.clear();
     // Nothing is in range until a prefetch pass says so again, which is what a cleared session means.
     wanted = new Set();
 };

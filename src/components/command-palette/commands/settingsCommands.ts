@@ -2,8 +2,10 @@ import { syncNow } from '../../../services/sync/syncCoordinator';
 import { isSyncConfigured } from '../../../services/sync/syncConfig';
 import { buildObsCustomCss } from '../../../services/obs/obsCustomCss';
 import { hasUploadedObsAsset } from '../../../services/obs/visualSettingsConfig';
-import type { CommandPaletteCommand } from '../types';
+import type { CommandPaletteCommand, CommandPaletteContext } from '../types';
+import type { GpuPreference } from '../../../stores/useDesktopSettingsStore';
 import { createToggleCommand, createAppLanguageCommand, createSettingsCommand, createSettingsAnchorCommand, defineCommand } from '../commandFactories';
+import { nowPlayingCardPositionCommand } from './nowPlayingCardPositionCommand';
 import { sleepTimerCommand } from './sleepTimerCommand';
 import { lyricExportCommands } from './lyricExportCommands';
 import { Gauge, Images, Layers3, Library } from 'lucide-react';
@@ -17,6 +19,33 @@ import { copyText } from '../../../utils/system/clipboard';
 
 // src/components/command-palette/commands/settingsCommands.ts
 // Commands in the `settings` group: settings subviews, app toggles, theme, sync, and desktop-only switches.
+
+/**
+ * Settings only the grid library UI reads (home cards, the card grid, the grid action button): same
+ * gate the settings page hides their rows behind. No context (contract tests, the full list) counts as available.
+ */
+const isGridOnlyCommandAvailable = (context?: CommandPaletteContext): boolean => (
+    context ? context.settings.isGridLibraryActive() : true
+);
+const GRID_ONLY = { isAvailable: isGridOnlyCommandAvailable };
+
+/** One command per render GPU choice (Windows only), hidden while it is the saved one. */
+function gpuPreferenceCommand(preference: GpuPreference, title: string, description: string, keywords: string[]): CommandPaletteCommand {
+    return defineCommand({
+        id: `gpu-preference-${preference}`,
+        platform: ['win'],
+        isAvailable: context => (context ? context.settings.gpuPreference() !== preference : true),
+        group: 'settings',
+        title,
+        description,
+        keywords,
+        execute: (_input, context) => {
+            if (context.settings.gpuPreference() === preference) return false;
+            context.settings.setGpuPreference(preference);
+            return true;
+        },
+    });
+}
 
 export const settingsCommands: CommandPaletteCommand[] = [
     createSettingsCommand('settings-help', 'Open Help', 'Open help and shortcuts', ['help', '帮助'], 'help', null, { executeShortcut: 'h' }),
@@ -32,11 +61,13 @@ export const settingsCommands: CommandPaletteCommand[] = [
         },
     },
     sleepTimerCommand,
+    nowPlayingCardPositionCommand,
     createSettingsCommand('settings-options', 'Open Options', 'Open the options center', ['settings', 'options', '设置', '选项'], 'options', null, { executeShortcut: 'o' }),
     createSettingsCommand('settings-appearance', 'Appearance settings', 'Open visual and appearance settings', ['appearance', 'visual settings', '外观', '视觉'], 'options', 'appearance'),
+    createSettingsAnchorCommand('settings-ai-provider', 'AI provider settings', 'Choose an AI provider and model', ['model connection', 'api key', '模型设置', '供应商', '密钥', 'deepseek', 'kimi', 'glm', 'qwen', '通义', '智谱'], 'electronSettings', { platform: ['electron'] }),
     createSettingsAnchorCommand('settings-theme-presets', 'Theme presets', 'Jump to the built-in and saved theme presets', ['preset theme', 'color preset', '预设主题'], 'themePresets'),
     createSettingsAnchorCommand('settings-lyrics-renderer', 'Lyrics renderer', 'Jump to how lyrics are drawn on the player', ['lyric renderer', 'lyric engine', '歌词渲染'], 'lyricsRenderer'),
-    createSettingsAnchorCommand('settings-grid-card-style', 'Grid card style', 'Jump to how the home grid draws its cards', ['card style', 'polaroid', 'grid style', '卡片样式'], 'grid3dCardStyle'),
+    createSettingsAnchorCommand('settings-grid-card-style', 'Grid card style', 'Jump to how the home grid draws its cards', ['card style', 'polaroid', 'grid style', '卡片样式'], 'grid3dCardStyle', GRID_ONLY),
     createSettingsCommand('settings-general', 'General settings', 'Open general app preferences', ['general', 'language settings', 'locale', '通用', '语言'], 'options', 'general'),
     createSettingsAnchorCommand('settings-home-tabs', 'Home tab visibility', 'Choose which tabs the home screen shows', ['hide tabs', 'home tabs', '首页标签'], 'homeTabsVisibility'),
     createToggleCommand(
@@ -46,6 +77,7 @@ export const settingsCommands: CommandPaletteCommand[] = [
         'Toggle restoring each home section to its last card',
         ['restore card', 'tab position', '卡片定位', '返回首页'],
         context => context.settings.toggleRememberHomeCardPosition(),
+        GRID_ONLY,
     ),
     createSettingsAnchorCommand('settings-playback-entry-view', 'Play opens', 'Jump to which view pressing play opens', ['entry view', 'open on play', 'default view', '播放进入视图', '默认视图'], 'playbackEntryView'),
     {
@@ -115,8 +147,9 @@ export const settingsCommands: CommandPaletteCommand[] = [
     ...libraryWallLookCommands,
     createSettingsAnchorCommand('settings-pinned-commands', 'Pinned command slots', 'Choose the three commands pinned in the palette', ['pinned commands', 'quick slots', '固定命令'], 'pinnedCommands'),
     createSettingsCommand('settings-interaction', 'Interaction settings', 'Open keyboard, shortcut and grid interaction settings', ['interaction', 'keyboard', 'hotkey', '交互', '快捷键设置'], 'options', 'interaction'),
+    createSettingsAnchorCommand('settings-global-shortcuts', 'Global shortcuts', 'Jump to the system-wide shortcuts for playback and mod commands', ['global hotkey', 'system shortcut', 'media keys', '全局快捷键', '系统快捷键'], 'globalShortcuts', { platform: ['electron'] }),
     createSettingsAnchorCommand('settings-custom-shortcut', 'Custom shortcuts', 'Jump to the custom keyboard shortcut bindings', ['keybinding', 'rebind', 'hotkey', '自定义快捷键'], 'customShortcut'),
-    createSettingsAnchorCommand('settings-grid-action-button', 'Grid action button', 'Jump to what the grid action button slides to', ['grid button', 'action button', '海报墙按钮'], 'gridActionButton'),
+    createSettingsAnchorCommand('settings-grid-action-button', 'Grid action button', 'Jump to what the grid action button slides to', ['grid button', 'action button', '海报墙按钮'], 'gridActionButton', GRID_ONLY),
     createSettingsCommand('settings-playback', 'Playback settings', 'Open playback behavior settings', ['playback', '播放', '播放设置'], 'options', 'playback'),
     createSettingsAnchorCommand('settings-queue-behavior', 'Queue behavior', 'Jump to how the play queue is built and kept', ['queue settings', 'queue behaviour', '队列行为'], 'queueSettings'),
     createSettingsAnchorCommand('settings-netease-scrobble', 'NetEase listening report', 'Jump to whether finished plays are reported to NetEase Cloud Music', ['scrobble', 'netease scrobble', 'listening report', 'play count', '听歌打卡', '打卡', '听歌排行'], 'scrobbleSettings'),
@@ -328,6 +361,15 @@ export const settingsCommands: CommandPaletteCommand[] = [
             return true;
         },
     },
+    createToggleCommand(
+        'desktop-toggle-background-throttling',
+        'settings',
+        'Background throttling',
+        'Toggle throttling rendering and holding the lyric animation while Folia is minimised or hidden',
+        ['throttle when hidden', 'pause lyrics when minimized', 'stop animation in background', 'power saving', '后台节流', '后台暂停歌词', '最小化停止动画', '省电'],
+        context => context.settings.toggleBackgroundThrottling(),
+        { platform: ['electron'] },
+    ),
     createSettingsCommand('settings-wallpaper-mode', 'Wallpaper mode settings', 'Open wallpaper mode settings', ['wallpaper mode', 'desktop wallpaper', 'lyrics wallpaper', '壁纸模式', '桌面壁纸', '歌词壁纸'], 'options', 'desktop', { platform: ['linux', 'win', 'mac'] }),
     {
         id: 'desktop-toggle-wallpaper-mode',
@@ -381,6 +423,15 @@ export const settingsCommands: CommandPaletteCommand[] = [
         context => context.settings.toggleRemoteControlExpandCover(),
         { platform: ['electron'] },
     ),
+    createToggleCommand(
+        'desktop-toggle-remote-control-text-shade',
+        'settings',
+        'Remote control: text shade',
+        'Toggle the soft dark shade under idle text on the transparent background of the remote control window',
+        ['remote control text shade', 'remote window shade', 'text backdrop', 'transparent background readability', '遥控窗口文字黑底', '文字黑底', '透明背景黑底'],
+        context => context.settings.toggleRemoteControlTextShade(),
+        { platform: ['electron'] },
+    ),
     {
         // Pairs with the remote control click-through switch: while the window ignores the mouse this is the way back in.
         id: 'desktop-unlock-remote-control',
@@ -395,6 +446,10 @@ export const settingsCommands: CommandPaletteCommand[] = [
         },
     },
     createSettingsCommand('settings-graphics', 'Graphics settings', 'Open static mode, frame rate cap, Linux glow fix and reduced motion', ['graphics', 'performance', 'frame rate', 'fps', 'rendering', '图形', '图形设置', '性能', '帧率', '渲染'], 'options', 'graphics'),
+    createSettingsAnchorCommand('settings-gpu-preference', 'Render GPU settings', 'Jump to the choice of graphics card the app renders on', ['render gpu', 'graphics card', 'discrete gpu', 'integrated gpu', 'dual gpu', '渲染显卡', '显卡', '独显', '核显', '双显卡'], 'gpuPreference', { platform: ['win'] }),
+    gpuPreferenceCommand('auto', 'Render GPU: Auto', 'Let Windows choose the graphics card; applies after a restart', ['render gpu auto', 'default gpu', '渲染显卡自动', '显卡自动']),
+    gpuPreferenceCommand('high-performance', 'Render GPU: High performance', 'Render on the discrete GPU; applies after a restart', ['render gpu high performance', 'discrete gpu', 'dedicated gpu', 'dgpu', 'nvidia', '渲染显卡高性能', '独显', '独立显卡']),
+    gpuPreferenceCommand('low-power', 'Render GPU: Power saving', 'Render on the integrated GPU; applies after a restart', ['render gpu power saving', 'integrated gpu', 'igpu', 'battery', '渲染显卡省电', '核显', '集成显卡']),
     createSettingsCommand('settings-mods', 'Mod settings', 'Open the mod system switch and the installed mods', ['mod manager', 'mod system', 'plugins', '模组设置', '模组系统', '插件'], 'options', 'mods', { platform: ['electron'] }),
     // The lab category is gone; its largest group, the player page switches, keeps the command.
     createSettingsAnchorCommand('settings-lab', 'Player page interface', 'Jump to the switches that hide or pin parts of the player page', ['player interface', 'hide player controls', 'lab', 'experimental', '播放页界面', '实验', '实验室'], 'labPlayerUi'),
@@ -584,9 +639,10 @@ export const settingsCommands: CommandPaletteCommand[] = [
         requiresInput: true,
         surface: gridViewCardsSurface,
         placeholder: context => context.shared.t('commandPalette.gridViewCardsPlaceholder', 'Adjust the controls below'),
+        ...GRID_ONLY,
         execute: () => false,
     }),
-    createToggleCommand('settings-toggle-gridview-full-bleed-cover', 'settings', 'Full-bleed grid covers', 'Toggle whether grid card artwork fills the whole card', ['full bleed cover', 'edge to edge cover', 'grid cover art', 'cover fills card', '全画幅封面', '封面铺满', '网格卡片封面'], context => context.settings.toggleGridViewFullBleedCover()),
+    createToggleCommand('settings-toggle-gridview-full-bleed-cover', 'settings', 'Full-bleed grid covers', 'Toggle whether grid card artwork fills the whole card', ['full bleed cover', 'edge to edge cover', 'grid cover art', 'cover fills card', '全画幅封面', '封面铺满', '网格卡片封面'], context => context.settings.toggleGridViewFullBleedCover(), GRID_ONLY),
     createToggleCommand(
         'settings-toggle-gridview-square-cards',
         'settings',
@@ -596,7 +652,7 @@ export const settingsCommands: CommandPaletteCommand[] = [
         context => context.settings.toggleGridViewSquareCards(),
         // Same gate the settings panel hides the row behind: squaring the card only means anything
         // once the artwork owns it. A getter, because the parent toggle flips without a re-render.
-        { isAvailable: context => (context ? context.settings.canUseGridViewSquareCards() : false) },
+        { isAvailable: context => (context ? context.settings.isGridLibraryActive() && context.settings.canUseGridViewSquareCards() : false) },
     ),
     defineCommand({
         id: 'lattice-poster-tint',
@@ -629,6 +685,7 @@ export const settingsCommands: CommandPaletteCommand[] = [
     createToggleCommand('settings-toggle-follow-system-reduced-motion', 'settings', 'Follow system reduced motion', 'Toggle whether the system animation setting is allowed to reduce motion in the app', ['system animation setting', 'os reduced motion', 'system motion preference', '跟随系统动画设置', '跟随系统减少动画', '系统动效偏好'], context => context.settings.toggleFollowSystemReducedMotion()),
     createToggleCommand('settings-toggle-track-switch-buttons', 'settings', 'Always show track switch arrows', 'Toggle whether the progress bar track switch arrows stay visible beside the title', ['track switch buttons', 'previous next arrows', 'progress bar arrows', 'song switch buttons', '切歌箭头', '切换箭头', '始终显示切歌按钮', '进度条切歌按钮', '上一首下一首按钮', 'jinduting qiege', 'sysqgan'], context => context.settings.toggleAlwaysShowTrackSwitchButtons()),
     createToggleCommand('settings-toggle-main-window-titlebar', 'settings', 'Always show window control buttons', 'Toggle whether the main window control buttons stay visible', ['always show window controls', 'window control buttons', 'always show titlebar', 'main window titlebar', 'titlebar', '标题栏', '控制按钮', '始终显示标题栏', '始终显示控制按钮', '主窗口标题栏', 'kongzhi annniu', 'bt', 'zckbt'], context => context.settings.toggleAlwaysShowMainWindowTitlebar()),
+    createToggleCommand('settings-toggle-player-header-blur', 'settings', 'Blurred player header', 'Toggle a frosted bar behind the window titlebar on the player page so its buttons stay readable', ['player header blur', 'titlebar blur', 'frosted titlebar', 'header background', 'window controls visibility', '播放页顶栏模糊背景', '顶栏模糊', '标题栏模糊', '标题栏背景', '磨砂标题栏'], context => context.settings.togglePlayerHeaderBlur(), { platform: ['electron'] }),
     createToggleCommand('settings-toggle-fullscreen-titlebar-button', 'settings', 'Toggle fullscreen button visibility', 'Show or hide the fullscreen button in the desktop window controls', ['fullscreen button', 'titlebar fullscreen', 'window fullscreen button', 'show fullscreen control', 'hide fullscreen button', 'fullscreen button visibility', '全屏按钮', '标题栏全屏按钮', '显示全屏按钮', '隐藏全屏按钮', '窗口全屏控制', 'quanping annniu', 'biaotilan quanping'], context => context.settings.toggleHideFullscreenButton(), { platform: ['electron'] }),
     createToggleCommand('settings-toggle-native-mac-fullscreen-button', 'settings', 'Native macOS fullscreen button', 'Toggle whether the macOS window control enters native fullscreen instead of maximizing', ['mac window control', 'native fullscreen', 'maximize button', 'macOS 全屏', '原生全屏', '窗口按钮'], context => context.settings.toggleNativeMacFullscreenButton(), { platform: ['mac'] }),
     createToggleCommand('settings-toggle-cursor-auto-hide', 'settings', 'Hide cursor with player controls', 'Toggle whether the mouse pointer disappears together with the auto-hidden player controls', ['cursor', 'mouse pointer', 'hide cursor', 'hide mouse', 'pointer', '鼠标', '鼠标指针', '隐藏鼠标', '隐藏指针', '指针自动隐藏'], context => context.settings.toggleAutoHideCursorWithPlayerChrome()),
@@ -689,5 +746,6 @@ export const settingsCommands: CommandPaletteCommand[] = [
     createAppLanguageCommand('settings-language-zh-CN', 'zh-CN', 'Switch language to Simplified Chinese', 'Use Simplified Chinese in the interface', ['chinese', 'simplified chinese', '中文', '简体中文']),
     createAppLanguageCommand('settings-language-zh-TW', 'zh-TW', 'Switch language to Traditional Chinese', 'Use Traditional Chinese in the interface', ['traditional chinese', 'taiwan region', 'chinese traditional', '繁體中文', '繁体中文', '正體中文']),
     createAppLanguageCommand('settings-language-en', 'en', 'Switch language to English', 'Use English in the interface', ['english', 'interface english', '英文']),
-    createAppLanguageCommand('settings-language-in', 'in', 'Switch language to Indonesian', 'Use Bahasa Indonesia in the interface', ['indonesian', 'bahasa indonesia', 'indonesia', '印尼语', 'bhs'])
+    createAppLanguageCommand('settings-language-in', 'in', 'Switch language to Indonesian', 'Use Bahasa Indonesia in the interface', ['indonesian', 'bahasa indonesia', 'indonesia', '印尼语', 'bhs']),
+    createAppLanguageCommand('settings-language-vi', 'vi', 'Switch language to Vietnamese', 'Use Vietnamese in the interface', ['vietnamese', 'tieng viet', 'tiếng việt', 'viet nam', 'việt nam', '越南语'])
 ];

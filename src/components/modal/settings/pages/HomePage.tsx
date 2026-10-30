@@ -9,6 +9,7 @@ import {
     HEX_CARD_MIN_SCALE_DEFAULT,
 } from '../../../../utils/hexCardFalloff';
 import { chooseLibrarySuite, listLibrarySuiteOptions, useActiveLibrarySuiteId } from '../../../../library/app/librarySuiteChoice';
+import { isGridLibraryActive, useIsGridLibraryActive } from '../../../../library/app/gridLibraryActive';
 import { hasLibrarySuiteChoice } from '../../../../library/registry';
 import { omni } from '../../../../services/onlineMusic/omni';
 import { useGridViewSettingsStore } from '../../../../stores/useGridViewSettingsStore';
@@ -21,13 +22,16 @@ import { GridCardsPreview, HomeCardStylePicture } from './pictures';
 // src/components/modal/settings/pages/HomePage.tsx
 // The 主页与歌单 page: which library UI the home screen, collections and artists are browsed in
 // (only where the build has more than one), the bravais wall's own settings while it is the one in
-// effect, which entries the home screen shows and how its cards are drawn, and the look of the card
-// grid a playlist or album opens into.
+// effect, which entries the home screen shows, and, while the grid is the one in effect, how its
+// home cards are drawn and the look of the card grid a playlist or album opens into. Every library
+// UI reads the entries; the card style, the remembered card and the card grid only the grid
+// (isGridLibraryActive), so under another UI they are not drawn and the search leaves them out.
 
 // The choice of suite is not part of the config export.
 const SUITE: SettingsGroupDef = { id: 'librarySuite', titleKey: 'options.librarySuite', available: hasLibrarySuiteChoice };
 const HOME: SettingsGroupDef = { id: 'homeScreen', titleKey: 'options.settingsHeadingHome' };
-const GRID: SettingsGroupDef = { id: 'gridViewCardSettings', titleKey: 'options.gridViewCardSettings' };
+const GRID: SettingsGroupDef = { id: 'gridViewCardSettings', titleKey: 'options.gridViewCardSettings', available: isGridLibraryActive };
+const GRID_ONLY = { available: isGridLibraryActive };
 
 const O = {
     suite: option(SUITE, 'librarySuiteChoice', 'options.librarySuite'),
@@ -37,8 +41,8 @@ const O = {
     tabExplore: option(HOME, 'showHomeTabExplore', 'options.showHomeTabExplore'),
     tabAlbums: option(HOME, 'showHomeTabAlbums', 'options.showHomeTabAlbums'),
     tabLocal: option(HOME, 'showHomeTabLocal', 'options.showHomeTabLocal'),
-    cardStyle: option(HOME, 'grid3dCardStyle', 'options.grid3dCardStyle'),
-    rememberPosition: option(HOME, 'rememberHomeCardPosition', 'options.rememberHomeCardPosition'),
+    cardStyle: option(HOME, 'grid3dCardStyle', 'options.grid3dCardStyle', GRID_ONLY),
+    rememberPosition: option(HOME, 'rememberHomeCardPosition', 'options.rememberHomeCardPosition', GRID_ONLY),
     fullBleedCover: option(GRID, 'gridViewFullBleedCover', 'options.gridViewFullBleedCover'),
     squareCard: option(GRID, 'gridViewSquareCard', 'options.gridViewSquareCard'),
     minCardScale: option(GRID, 'gridViewMinCardScale', 'options.gridViewMinCardScale'),
@@ -52,6 +56,7 @@ const percent = (value: number) => `${Math.round(value * 100)}%`;
 const HomePage: React.FC = () => {
     const { t } = useTranslation();
     const activeSuiteId = useActiveLibrarySuiteId();
+    const isGridActive = useIsGridLibraryActive();
     const home = useHomeLayoutSettingsStore(useShallow(state => ({
         tabPlaylist: state.showHomeTabPlaylist,
         tabRadio: state.showHomeTabRadio,
@@ -111,67 +116,74 @@ const HomePage: React.FC = () => {
                         ]}
                     />
                 </Row>
-                <Row option={O.cardStyle} note={t('options.grid3dCardStyleDesc')}>
-                    <PictureChoice
-                        value={home.cardStyle}
-                        options={[
-                            { value: 'image', label: t('options.grid3dCardStyleImage'), picture: <HomeCardStylePicture style="image" /> },
-                            { value: 'card', label: t('options.grid3dCardStyleCard'), picture: <HomeCardStylePicture style="card" /> },
-                        ]}
-                        onChange={home.setCardStyle}
-                    />
-                </Row>
-                <Row option={O.rememberPosition} note={t('options.rememberHomeCardPositionDesc')}>
-                    <Toggle checked={home.rememberPosition} onChange={home.setRememberPosition} />
-                </Row>
+                {/* Only the grid draws the home screen as cards. */}
+                {isGridActive && (
+                    <>
+                        <Row option={O.cardStyle} note={t('options.grid3dCardStyleDesc')}>
+                            <PictureChoice
+                                value={home.cardStyle}
+                                options={[
+                                    { value: 'image', label: t('options.grid3dCardStyleImage'), picture: <HomeCardStylePicture style="image" /> },
+                                    { value: 'card', label: t('options.grid3dCardStyleCard'), picture: <HomeCardStylePicture style="card" /> },
+                                ]}
+                                onChange={home.setCardStyle}
+                            />
+                        </Row>
+                        <Row option={O.rememberPosition} note={t('options.rememberHomeCardPositionDesc')}>
+                            <Toggle checked={home.rememberPosition} onChange={home.setRememberPosition} />
+                        </Row>
+                    </>
+                )}
             </Group>
 
-            <Group
-                def={GRID}
-                action={(
-                    <Button variant="quiet" icon={RotateCcw} onClick={grid.resetFalloff} disabled={isDefaultFalloff}>
-                        {t('options.gridViewCardFalloffReset')}
-                    </Button>
-                )}
-                preview={(
-                    <GridCardsPreview
-                        minScale={grid.minCardScale}
-                        minOpacity={grid.minCardOpacity}
-                        fullBleedCover={grid.fullBleedCover}
-                        squareCards={grid.squareCards}
-                    />
-                )}
-            >
-                <Row option={O.fullBleedCover} hint={t('options.gridViewFullBleedCoverHint')} note={t('options.gridViewFullBleedCoverDesc')}>
-                    <Toggle checked={grid.fullBleedCover} onChange={grid.setFullBleedCover} />
-                </Row>
-                {/* Squaring only means anything once the artwork owns the whole card. */}
-                <Reveal when={grid.fullBleedCover}>
-                    <Row sub option={O.squareCard} hint={t('options.gridViewSquareCardHint')} note={t('options.gridViewSquareCardDesc')}>
-                        <Toggle checked={grid.squareCards} onChange={grid.setSquareCards} />
+            {isGridActive && (
+                <Group
+                    def={GRID}
+                    action={(
+                        <Button variant="quiet" icon={RotateCcw} onClick={grid.resetFalloff} disabled={isDefaultFalloff}>
+                            {t('options.gridViewCardFalloffReset')}
+                        </Button>
+                    )}
+                    preview={(
+                        <GridCardsPreview
+                            minScale={grid.minCardScale}
+                            minOpacity={grid.minCardOpacity}
+                            fullBleedCover={grid.fullBleedCover}
+                            squareCards={grid.squareCards}
+                        />
+                    )}
+                >
+                    <Row option={O.fullBleedCover} hint={t('options.gridViewFullBleedCoverHint')} note={t('options.gridViewFullBleedCoverDesc')}>
+                        <Toggle checked={grid.fullBleedCover} onChange={grid.setFullBleedCover} />
                     </Row>
-                </Reveal>
-                <Row option={O.minCardScale} hint={t('options.gridViewMinCardScaleHint')} note={t('options.gridViewMinCardScaleDesc')}>
-                    <Slider
-                        value={grid.minCardScale}
-                        min={HEX_CARD_MIN_SCALE_BOUNDS.min}
-                        max={HEX_CARD_MIN_SCALE_BOUNDS.max}
-                        step={0.01}
-                        onChange={grid.setMinCardScale}
-                        format={percent}
-                    />
-                </Row>
-                <Row option={O.minCardOpacity} hint={t('options.gridViewMinCardOpacityHint')} note={t('options.gridViewMinCardOpacityDesc')}>
-                    <Slider
-                        value={grid.minCardOpacity}
-                        min={HEX_CARD_MIN_OPACITY_BOUNDS.min}
-                        max={HEX_CARD_MIN_OPACITY_BOUNDS.max}
-                        step={0.01}
-                        onChange={grid.setMinCardOpacity}
-                        format={percent}
-                    />
-                </Row>
-            </Group>
+                    {/* Squaring only means anything once the artwork owns the whole card. */}
+                    <Reveal when={grid.fullBleedCover}>
+                        <Row sub option={O.squareCard} hint={t('options.gridViewSquareCardHint')} note={t('options.gridViewSquareCardDesc')}>
+                            <Toggle checked={grid.squareCards} onChange={grid.setSquareCards} />
+                        </Row>
+                    </Reveal>
+                    <Row option={O.minCardScale} hint={t('options.gridViewMinCardScaleHint')} note={t('options.gridViewMinCardScaleDesc')}>
+                        <Slider
+                            value={grid.minCardScale}
+                            min={HEX_CARD_MIN_SCALE_BOUNDS.min}
+                            max={HEX_CARD_MIN_SCALE_BOUNDS.max}
+                            step={0.01}
+                            onChange={grid.setMinCardScale}
+                            format={percent}
+                        />
+                    </Row>
+                    <Row option={O.minCardOpacity} hint={t('options.gridViewMinCardOpacityHint')} note={t('options.gridViewMinCardOpacityDesc')}>
+                        <Slider
+                            value={grid.minCardOpacity}
+                            min={HEX_CARD_MIN_OPACITY_BOUNDS.min}
+                            max={HEX_CARD_MIN_OPACITY_BOUNDS.max}
+                            step={0.01}
+                            onChange={grid.setMinCardOpacity}
+                            format={percent}
+                        />
+                    </Row>
+                </Group>
+            )}
         </>
     );
 };

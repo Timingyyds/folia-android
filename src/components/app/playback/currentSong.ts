@@ -34,6 +34,15 @@ import { setCurrentSong, usePlaybackStore } from '../../../stores/usePlaybackSto
 // no, once a newer play has started, or once a route that empties the player or leaves the main
 // player for the stage has called `dropPlaysInFlight`. A play that is answered no writes nothing more.
 //
+// What a play leaves running after it showed its song asks a second answer, `onceShown`: no while a
+// newer play is on its way, and yes again once every newer play gave up without showing its song.
+// The HiFi route keeps it on the track and asks it when mpv moves on, fails or is switched off. A
+// play that gives up before it shows its song (its file cannot be read, its record is gone, the
+// platform refused it, it was answered no) therefore calls `abandon()` on what it took, and so does
+// one that hands over to another play (playSong to a local or Navidrome song, which takes its own).
+// The plain answer does not change with it: a play that was still on its way when a newer one
+// started stays overtaken, whatever that newer play does after.
+//
 // A restore of a remembered song (the last session, the hand-off to a rebuilt window) is not a
 // play: it ends no play, and it makes its song current before its first wait. The key cannot tell
 // it from a play of that same song, so it takes `startRestore()` at that moment and asks the answer
@@ -52,23 +61,60 @@ export const askedSongKeyRef: AskedSongKeyRef = {
 
 let playsStarted = 0;
 let playsDropped = 0;
+/**
+ * The plays started since the last drop that have not been abandoned, oldest first (for
+ * `onceShown`). Only the newest PLAYS_KEPT are kept: a play older than those is answered no for good
+ * (`playsForgotten`), which it already is while any of them stands.
+ */
+let playsStanding: number[] = [];
+const PLAYS_KEPT = 64;
+let playsForgotten = 0;
 /** How often a song was asked for. The key cannot tell two asks for the same song apart; this can. */
 let asks = 0;
 
 /** Every play that has started and has not shown its song yet gives up at its next check. */
 export const dropPlaysInFlight = (): void => {
     playsDropped += 1;
+    // Every play started so far is answered no by the count above, whatever is abandoned later.
+    playsStanding = [];
+};
+
+/** What `startPlay` hands a play: call it for the answer, the rest as below. */
+export type PlayStart = {
+    /** Is this play still wanted: yes until a newer play starts or the plays in flight are dropped. */
+    (): boolean;
+    /**
+     * For what the play leaves running once it showed its song (the HiFi track): yes until a newer
+     * play starts or the plays in flight are dropped, and yes again once every newer play abandoned.
+     */
+    onceShown: () => boolean;
+    /**
+     * The play gives up without showing its song, or hands over to another play: it stops counting
+     * as a newer play for the plays before it (their `onceShown`). Its own answers stay as they were.
+     * Calling it again does nothing.
+     */
+    abandon: () => void;
 };
 
 /**
  * A play calls this when it starts and keeps what it gets: the answer to "is this play still
- * wanted". It is yes until a newer play starts or the plays in flight are dropped.
+ * wanted", and the two parts above.
  */
-export const startPlay = (): (() => boolean) => {
+export const startPlay = (): PlayStart => {
     playsStarted += 1;
     const started = playsStarted;
     const dropped = playsDropped;
-    return () => playsStarted === started && playsDropped === dropped;
+    playsStanding.push(started);
+    if (playsStanding.length > PLAYS_KEPT) playsForgotten = playsStanding.shift() ?? playsForgotten;
+    const stillWanted = () => playsStarted === started && playsDropped === dropped;
+    return Object.assign(stillWanted, {
+        onceShown: () => playsDropped === dropped
+            && started > playsForgotten
+            && (playsStanding.length === 0 || playsStanding[playsStanding.length - 1] <= started),
+        abandon: () => {
+            playsStanding = playsStanding.filter(play => play !== started);
+        },
+    });
 };
 
 /**

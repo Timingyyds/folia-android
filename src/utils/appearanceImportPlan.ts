@@ -6,6 +6,7 @@ import {
 import { mergeUrlBackgroundList } from './urlBackground';
 import { normalizeFontWeight } from './fontStacks';
 import type { UrlBackgroundItem } from '../types';
+import { resolveSmartBeatSettings, type SmartBeatPatch } from '../services/beatFx/smartBeatSettings';
 
 // src/utils/appearanceImportPlan.ts
 // What an imported config would actually change, computed before anything is applied. Pure: the
@@ -70,6 +71,7 @@ export const ACTIVATE_CUSTOM_THEME_KEY = 'activateCustomTheme';
 const FIELD_GROUPS: Record<string, ImportGroup> = {
     visualizerMode: 'visualizer',
     randomVisualizerModePerSong: 'visualizer',
+    randomVisualizerModes: 'visualizer',
     visualizerOpacity: 'visualizer',
     hidePlayerTranslationSubtitle: 'visualizer',
     showSubtitleTranslation: 'visualizer',
@@ -138,6 +140,7 @@ const FIELD_GROUPS: Record<string, ImportGroup> = {
     stageTrackPillMode: 'trackCard',
     stageTrackPillTimeoutSec: 'trackCard',
     stageTrackPillOnHome: 'trackCard',
+    stageTrackPillPosition: 'trackCard',
 
     // The bravais wall's collection stack edges. Its own group: it styles the library wall, not the
     // picture or the card, and someone taking a look for its colours has a reason to leave it alone.
@@ -147,6 +150,11 @@ const FIELD_GROUPS: Record<string, ImportGroup> = {
     libraryWallSeamStyle: 'libraryWall',
     libraryWallBackdropLyrics: 'libraryWall',
     libraryWallBackdropBlur: 'libraryWall',
+    libraryWallSeamDirection: 'libraryWall',
+
+    // The frosted bar behind the player page's titlebar. Under visualizer with the other player-page
+    // switch that travels (hidePlayerTranslationSubtitle): it is part of how the playing screen looks.
+    playerHeaderBlur: 'visualizer',
 };
 
 // Fields the import applies only when the incoming value is truthy, so an incoming null means "the
@@ -190,6 +198,8 @@ const TRUTHY_GUARDED_FIELDS = new Set([
     'stageTrackPillMode',
     // applyImportedConfig only applies a known info strip preset, all of which are truthy strings.
     'libraryWallSeamStyle',
+    // Likewise a known info strip direction (auto / vertical / horizontal).
+    'libraryWallSeamDirection',
 ]);
 
 // Per-renderer tunings the import skips whenever the visualizerTunings bundle is present. The three
@@ -453,6 +463,20 @@ export function buildImportPlan({
         if (key === 'lyricsFontWeight' || key === 'subtitleFontWeight') {
             const to = normalizeFontWeight(incoming[key]);
             record({ group, key, from: current[key], to }, isSameValue(to, current[key]));
+            continue;
+        }
+
+        // 智能动感模式 is diffed as the store will hold it (from the PR #750 review): the codec carries
+        // the `enabled` switch for builds before the modes, and a mode this build does not know, which
+        // the store folds or ignores. Diffed raw, the first showed as a row of its own, and the second
+        // as a change that never lands and comes back on every import.
+        if (key === 'smartBeat') {
+            const from = resolveSmartBeatSettings(current[key] as SmartBeatPatch | undefined);
+            const to = resolveSmartBeatSettings(incoming[key] as SmartBeatPatch, from);
+            const change: ImportChange = { group, key, from, to };
+            const children = diffLeaves(from, to, group);
+            if (children.length) change.children = children;
+            record(change, children.length === 0);
             continue;
         }
 

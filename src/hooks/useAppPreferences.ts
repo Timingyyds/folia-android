@@ -179,6 +179,17 @@ export function useAppPreferences() {
     }, []);
 
     useEffect(() => {
+        // macOS wallpaper mode with Stage Manager on and the desktop icons shown: without the
+        // Accessibility grant a click on the wallpaper still sends the stage aside (issue #698).
+        return window.electron?.onWallpaperAccessibilitySuggested?.(() => {
+            setStatusMessage({
+                type: 'info',
+                text: i18n.t('notifications.macWallpaperAccessibilitySuggested'),
+            });
+        });
+    }, []);
+
+    useEffect(() => {
         let isCancelled = false;
 
         const loadCustomEmojiPack = async () => {

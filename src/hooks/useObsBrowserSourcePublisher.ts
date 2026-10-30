@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import type { MotionValue } from 'framer-motion';
 import type {
     AudioBands,
@@ -32,6 +33,7 @@ import type {
 } from '../types/obsBrowserSource';
 import {
     buildLegacyObsBrowserSourceBackgroundConfig,
+    buildObsBrowserSourceClock,
     ObsBrowserSourceConfigPublicationTracker,
     downsampleObsSpectrum,
     isObsBrowserSourceBlobCoverUrl,
@@ -45,7 +47,8 @@ import { loadTemperaLayerImageBlobs } from '../services/temperaLayerImages';
 import type { VisualizerTuningBundle } from '../components/visualizer/tuningRegistry';
 import type { VisualizerBackgroundConfig } from '../components/visualizer/backgrounds/definition';
 import { getSongAlbumLabel, getSongArtistLabel } from '../services/onlineMusic/songMetadata';
-import { selectDisplayPlayerState, usePlaybackStore } from '../stores/usePlaybackStore';
+import { selectDisplayDuration, selectDisplayLyrics, selectDisplayPlayerState, selectDisplaySong, usePlaybackStore } from '../stores/usePlaybackStore';
+import { omni } from '../services/onlineMusic/omni';
 import { useThemeSettingsStore } from '../stores/useThemeSettingsStore';
 import { useVisualizerSettingsStore } from '../stores/useVisualizerSettingsStore';
 import { useTypographySettingsStore } from '../stores/useTypographySettingsStore';
@@ -54,6 +57,7 @@ import { audioBands, audioPower, currentTime } from '../stores/motionSignals';
 import { useVisualizerTunings } from '../components/visualizer/useVisualizerTunings';
 import { useVisualizerBackgroundConfig } from '../components/visualizer/useVisualizerBackgroundConfig';
 import { usePlayerChromeSettingsStore } from '../stores/usePlayerChromeSettingsStore';
+import { getObservedMedia } from '../services/hifi/hifiMediaShim';
 
 // src/hooks/useObsBrowserSourcePublisher.ts
 // Publishes the single playback surface to the local OBS browser source.
@@ -66,6 +70,8 @@ type UseObsBrowserSourcePublisherOptions = {
 
 
     isElectronWindow: boolean;
+    audioRef: MutableRefObject<HTMLAudioElement | null>;
+    getDisplayAudioElement?: () => HTMLAudioElement | null;
     stageSource: StageSource | null;
     coverUrl: string | null;
     offsetMs: number;
@@ -112,6 +118,8 @@ const resolveTemperaLayerAssets = async (
 
 export const useObsBrowserSourcePublisher = ({
     isElectronWindow,
+    audioRef,
+    getDisplayAudioElement,
     stageSource,
     coverUrl,
     offsetMs,
@@ -134,9 +142,10 @@ export const useObsBrowserSourcePublisher = ({
     // Read here rather than passed in. Every one of these is a store field or a module-level motion
     // signal, and App.tsx was naming 22 of them purely to forward them to this hook.
     const activePlaybackContext = usePlaybackStore(state => state.activePlaybackContext);
-    const currentSong = usePlaybackStore(state => state.currentSong);
-    const lyrics = usePlaybackStore(state => state.lyrics);
-    const duration = usePlaybackStore(state => state.duration);
+    const playbackRoute = usePlaybackStore(state => state.playbackRoute);
+    const currentSong = usePlaybackStore(selectDisplaySong);
+    const lyrics = usePlaybackStore(selectDisplayLyrics);
+    const duration = usePlaybackStore(selectDisplayDuration);
     // Shown, not raw: the overlay pauses its picture on anything but PLAYING, so the raw IDLE of
     // every song change paused it for as long as the next song took to start.
     const playerState = usePlaybackStore(selectDisplayPlayerState);
@@ -317,14 +326,23 @@ export const useObsBrowserSourcePublisher = ({
         visualizerOpacity,
     ]);
 
-    const buildClock = useCallback((): ObsBrowserSourceClock => ({
-        currentTime: currentTime.get(),
-        duration,
-        playerState,
-        sentAtMs: Date.now(),
-        playbackRate: 1,
-        lyricOffsetMs: offsetMs,
-    }), [currentTime, duration, playerState, offsetMs]);
+    const buildClock = useCallback((): ObsBrowserSourceClock => {
+        // The HiFi media shim on the HiFi route: its source names no preview clip, so the clip start is 0.
+        const displayedAudio = getObservedMedia(getDisplayAudioElement?.() ?? audioRef.current);
+        // Stage clocks are independent of any old audio deck. For main playback, the URL belongs
+        // to the held picture during a blend, just as in usePlaybackVisualizerBridge.
+        const clipStartMs = activePlaybackContext === 'main'
+            ? omni.previewClipStartMsOfAudioSource(displayedAudio?.currentSrc ?? '')
+            : 0;
+        return buildObsBrowserSourceClock({
+            currentTime: currentTime.get(),
+            duration,
+            playerState,
+            sentAtMs: Date.now(),
+            playbackRate: 1,
+            lyricOffsetMs: offsetMs,
+        }, clipStartMs);
+    }, [activePlaybackContext, audioRef, getDisplayAudioElement, currentTime, duration, playbackRoute, playerState, offsetMs]);
 
     const buildAudio = useCallback((): ObsBrowserSourceAudio => ({
         audioPower: audioPower.get(),
@@ -400,7 +418,9 @@ export const useObsBrowserSourcePublisher = ({
                 return;
             }
 
-            const expectedTime = resolveObsBrowserSourceClockTime(lastClock, nowMs);
+            // Compare media time with media time, not with the preview-adjusted lyric clock.
+            const expectedTime = resolveObsBrowserSourceClockTime(lastClock, nowMs)
+                + (lastClock.lyricOffsetMs ?? 0) / 1000;
             if (Math.abs(nextTime - expectedTime) >= OBS_CLOCK_JUMP_THRESHOLD_SEC) {
                 publishClock();
             }

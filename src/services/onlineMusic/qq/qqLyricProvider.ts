@@ -28,7 +28,9 @@ async function requestQQ(method: string, module: string, param: any): Promise<an
       os_ver: "15",
       phonetype: "24122RKC7C",
       rom: "Redmi/miro/miro:15/AE3A.240806.005/OS2.0.102.0.VOMCNXM:user/release-keys",
-      tmeAppID: "qqmusiclight",
+      // 2026-10-25：不要再带 tmeAppID: 'qqmusiclight'。上游把这个 App 身份软封了——
+      // 搜索一律回 2001 / 空 item_song（同一请求不带它或在原生层用 'qqmusic' 都正常回 20 条）。
+      // 歌词接口对 tmeAppID 不敏感（带/不带/换值结果一致），去掉不影响歌词。
       nettype: "NETWORK_WIFI",
       udid: "0",
       uid: "0",

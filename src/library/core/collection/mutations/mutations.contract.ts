@@ -65,6 +65,8 @@ export type CollectionMutationCapabilities = {
     addToPlaylist: LibraryCapability;
     createPlaylist: LibraryCapability;
     editEntity: LibraryCapability;
+    /** 本地文件夹 / 专辑 / 歌单的自定义封面（打开宿主的封面对话框）。 */
+    setCover: LibraryCapability;
     organizeSongInfo: LibraryCapability;
     /** 本地歌曲匹配在线信息；还要看条目本身是不是本地歌。 */
     matchSong: LibraryCapability;
@@ -131,6 +133,8 @@ export interface CollectionMutationController {
     addToPlaylist(playlistId: string | number, tracks: SongResult[]): Promise<LibraryMutationResult>;
     createPlaylist(name: string, tracks: SongResult[]): Promise<LibraryMutationResult>;
     editEntity(): Promise<LibraryMutationResult>;
+    /** 打开宿主的集合封面对话框（poster.png、上传、选一首歌的封面、恢复默认）。 */
+    setCover(): Promise<LibraryMutationResult>;
     organizeSongInfo(): Promise<LibraryMutationResult>;
     matchSong(track: SongResult): Promise<LibraryMutationResult>;
     /** date 为 '' 表示今天；afresh 让上游重新生成今天的推荐。 */

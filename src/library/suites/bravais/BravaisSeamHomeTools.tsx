@@ -16,7 +16,7 @@ import type { BravaisHomeSeam, BravaisHomeShortcut, BravaisHomeTool, BravaisHome
 import { BRAVAIS_SPECIAL_ICONS } from './bravaisSpecialIcons';
 import { closeBravaisHomePopover, setBravaisHomeOpenRequest, setBravaisHomePopover, useBravaisHomeUiStore } from './bravaisHomeUiStore';
 import { useBravaisReducedTransitions } from './bravaisMotion';
-import { bravaisPopMotion } from './bravaisSeamMotion';
+import { bravaisPopMotion, seamPopAnchorFor } from './bravaisSeamMotion';
 
 // src/library/suites/bravais/BravaisSeamHomeTools.tsx
 // 首页窄缝底部的工具格。
@@ -86,7 +86,8 @@ const BravaisSeamHomeTools: React.FC<{
     const jumps = menuShortcuts ?? [];
     const hasMenu = jumps.length > 0 || page.length > 0 || local.length > 0 || app.length > 0;
     const open = menuOpen && hasMenu && !compact;
-    const pop = bravaisPopMotion('above', useBravaisReducedTransitions());
+    // 横的信息条在视口上半时菜单往下弹（工具格一直挂着，dockRef 在打开菜单的那次渲染里已经有值）。
+    const pop = bravaisPopMotion(seamPopAnchorFor(dockRef.current), useBravaisReducedTransitions());
 
     // 书脊上点了「⋯」：缝展开成窄缝后在这里把菜单打开。
     useEffect(() => {

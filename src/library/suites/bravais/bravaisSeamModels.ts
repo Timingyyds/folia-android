@@ -124,6 +124,17 @@ export type BravaisLayerWall = {
     filterKey?: string;
     /** 首屏加载中：空画框轻微呼吸。 */
     loading?: boolean;
+    /**
+     * 墙上没有内容时画在墙面上的说明（背景字，BravaisWallHint）：首页的来源因为还没连在线平台、还没导入本地文件夹而空着时
+     * 由来源给（bravaisWallHint）；层里有条目时 stage 不画它。
+     */
+    hint?: BravaisWallHint;
+};
+
+/** 空墙上的说明：一行大字标题，下面一段怎么开始的说明（可以没有）。文案都是已翻译的。 */
+export type BravaisWallHint = {
+    title: string;
+    body?: string;
 };
 
 /** 列表面板工具行的排序（本地文件夹才有）。 */

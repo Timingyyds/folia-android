@@ -25,7 +25,7 @@ import {
 
 // src/library/core/collection/resource/onlineCollectionResource.service.ts
 // 在线集合资源：读缓存 → 取首页 → 后台补页，以及详情、重新加载、续传。逻辑搬自 GridView 的
-// loadTracks / fetchRemainingTracks，判定规则不变；不同的是请求归属在资源上，而不是某个网格实例上：
+// loadTracks / fetchRemainingTracks；无版本歌单与专辑另有短时内存复用，请求归属在资源上，而不是某个网格实例上：
 // - 每个异步步骤都比对代数，资源被重新加载、暂停或销毁后，晚到的结果既不提交也不写缓存；
 // - 删除过的歌记成墓碑，后续分页不会把它带回来。集合给每一行起了名字时（collectionRowId，YouTube Music 的歌单）
 //   按行记：同一首歌的两行是两行，删掉的只是那一行。
@@ -40,6 +40,8 @@ export type OnlineCollectionResourceDeps = {
     writeCache: (cacheKey: string, tracks: SongResult[], snapshotTime: number, progress?: OnlineTracksCacheProgress) => Promise<void>;
     /** 补页间隔与重试退避用的等待；单测里换成立即返回。 */
     wait?: (ms: number) => Promise<void>;
+    /** 无版本集合的内存复用时限；测试可以注入时钟。 */
+    now?: () => number;
     /**
      * 账号自己的「我喜欢」歌单从第一页起读的开始与结束（omni.beginLikedListRead / endLikedListRead）：整份读完之后，
      * 红心跟着这份歌单走。别的集合开始时得到 null。不给时（单测）什么都不记。
@@ -59,6 +61,8 @@ const rowKeyOf = (song: SongResult): string => (
     [getPlaybackSongKey(song), (song as UnifiedSong).collectionRowId].filter(Boolean).join('#')
 );
 
+export const UNVERSIONED_COLLECTION_REUSE_MS = 5 * 60 * 1000;
+
 const isPersonalFm = (collection: OnlineGridViewCollectionDescriptor) => collection.type === 'radio' && collection.id === 'personal_fm';
 const isDailyRecommendations = (collection: OnlineGridViewCollectionDescriptor) => collection.type === 'daily_recommendations';
 
@@ -69,6 +73,8 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
     let started = false;
     let disposed = false;
     let loading = false;
+    const now = deps.now ?? Date.now;
+    let reusableUntil = 0;
     /** 首页加载与重新加载的代数；补页另有自己的代数。 */
     let loadGeneration = 0;
     let syncGeneration = 0;
@@ -171,6 +177,7 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
         syncGeneration += 1;
         pausedSyncOffset = null;
         loading = true;
+        reusableUntil = 0;
         state.set({
             status: 'loading',
             error: null,
@@ -224,6 +231,7 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
             loading = false;
             // The first page was the whole list.
             if (likedListRead && !hasMore) deps.endLikedListRead?.(likedListRead, responseTracks, true);
+            reusableUntil = now() + UNVERSIONED_COLLECTION_REUSE_MS;
             if (responseTracks.length === 0 && !hasMore) {
                 state.set({ status: 'ready', tracks: [] }, 'urgent');
                 return;
@@ -289,7 +297,9 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
             return !disposed
                 && next.source === 'online'
                 && collectionRevision(next) === revision
-                && resolveOnlineTracksTargetTime(next) > 0
+                && tombstones.size === 0
+                && (resolveOnlineTracksTargetTime(next) > 0
+                    || ((next.type === 'playlist' || next.type === 'album') && now() < reusableUntil))
                 && (status === 'ready' || sync.status === 'interrupted');
         },
         pause: () => {
@@ -337,6 +347,7 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
             return true;
         },
         replaceAll: async (loadAll) => {
+            reusableUntil = 0;
             const generation = ++loadGeneration;
             syncGeneration += 1;
             loading = true;

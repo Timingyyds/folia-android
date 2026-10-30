@@ -31,6 +31,8 @@ import { currentTime } from '../../../../stores/motionSignals';
 import { useRemoteControlActions } from '../../../../hooks/useRemoteControlActions';
 import { subscribeRemoteActions } from '../../../../mods/folium/registries/remoteActions';
 import { errorMessage } from '../../../../utils/errorText';
+import { getObservedMedia, hifiMediaShim } from '../../../../services/hifi/hifiMediaShim';
+import { seekHifiRoute } from '../../../hifi/hifiRouteTransport';
 
 // Bridges Electron-specific shell features without coupling to UI components.
 const DISCORD_PRESENCE_SNAPSHOT_INTERVAL_MS = 1000;
@@ -134,6 +136,8 @@ export const useElectronPlaybackBridge = ({
     const subtitleContentMode = useTypographySettingsStore(state => state.subtitleContentMode);
     const activePlaybackContext = usePlaybackStore(state => state.activePlaybackContext);
     const audioSrc = usePlaybackStore(state => state.audioSrc);
+    // On the HiFi route the clock and source below are read off the HiFi media shim instead of a deck.
+    const playbackRoute = usePlaybackStore(state => state.playbackRoute);
     const cachedCoverUrl = usePlaybackStore(state => state.cachedCoverUrl);
     const playQueue = usePlaybackStore(state => state.playQueue);
     const isFmMode = usePlaybackStore(state => state.isFmMode);
@@ -208,6 +212,11 @@ export const useElectronPlaybackBridge = ({
     };
 
     const isAudioElementUsingCurrentSource = () => {
+        // mpv's song has no URL here; the shim names the track it is sounding, or nothing between tracks.
+        // Read live, as getObservedMedia below does, so the two never disagree about the route.
+        if (usePlaybackStore.getState().playbackRoute === 'hifi') {
+            return Boolean(hifiMediaShim.currentSrc);
+        }
         const audioElement = audioRef.current;
         if (!audioElement || !audioSrc) {
             return false;
@@ -223,7 +232,7 @@ export const useElectronPlaybackBridge = ({
         // rest of the time. The metadata below is already the held picture (the caller passes
         // `currentSong`/`duration`/`coverUrl` as the displayed track), so reading the active deck's
         // position here would show the outgoing song's title against the incoming song's clock.
-        const audioElement = getDisplayAudioElement?.() ?? audioRef.current;
+        const audioElement = getObservedMedia(getDisplayAudioElement?.() ?? audioRef.current);
         const isCurrentAudioSource = isAudioElementUsingCurrentSource();
         const currentTimeSec = audioElement?.currentTime ?? currentTime.get();
         const stagePositionSec = resolveStagePlayerPositionSec({
@@ -427,7 +436,7 @@ export const useElectronPlaybackBridge = ({
             console.warn('[Electron] Failed to update Windows taskbar controls', error);
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentSong, effectiveLoopMode, isFmMode, isNowPlayingStageActive, playQueue, playerState]);
+    }, [currentSong, effectiveLoopMode, isFmMode, isNowPlayingStageActive, playQueue, playbackRoute, playerState]);
 
     // System/IME voice input pauses playback and resumes it afterwards. Resume only
     // fires when this bridge caused the pause and the track is still paused, so a
@@ -518,7 +527,7 @@ export const useElectronPlaybackBridge = ({
             window.removeEventListener('resize', handleResize);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cachedCoverUrl, coverUrl, currentSong, duration, effectiveLoopMode, exportState, isDaylight, isFmMode, isNowPlayingStageActive, isPlayerChromeHidden, playerChromeVisibilityMode, lyrics, lyricTimelineOffsetMs, mainWindowClickThroughEnabled, playbackSyncBridgeStatus, playQueue, playerState, showTransparentWindowBorder, subtitleContentMode, transparentPlayerBackground, isLiked]);
+    }, [cachedCoverUrl, coverUrl, currentSong, duration, effectiveLoopMode, exportState, isDaylight, isFmMode, isNowPlayingStageActive, isPlayerChromeHidden, playerChromeVisibilityMode, lyrics, lyricTimelineOffsetMs, mainWindowClickThroughEnabled, playbackRoute, playbackSyncBridgeStatus, playQueue, playerState, showTransparentWindowBorder, subtitleContentMode, transparentPlayerBackground, isLiked]);
 
     useEffect(() => {
         if (!playbackSyncBridgeStatus.discordPresenceEnabled || !window.electron?.publishDiscordPresenceSnapshot) {
@@ -529,7 +538,7 @@ export const useElectronPlaybackBridge = ({
         const intervalId = window.setInterval(publishDiscordPresenceSnapshot, DISCORD_PRESENCE_SNAPSHOT_INTERVAL_MS);
         return () => window.clearInterval(intervalId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cachedCoverUrl, coverUrl, currentSong, duration, isNowPlayingStageActive, playbackSyncBridgeStatus.discordPresenceEnabled, playerState]);
+    }, [cachedCoverUrl, coverUrl, currentSong, duration, isNowPlayingStageActive, playbackRoute, playbackSyncBridgeStatus.discordPresenceEnabled, playerState]);
 
     useEffect(() => {
         if (!isStagePlayerSnapshotEnabled || !window.electron?.publishStagePlayerSnapshot) {
@@ -549,7 +558,7 @@ export const useElectronPlaybackBridge = ({
             window.clearInterval(intervalId);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activePlaybackContext, audioSrc, cachedCoverUrl, coverUrl, currentSong, duration, effectiveLoopMode, getSyntheticStageLyricsTime, isFmMode, isNowPlayingStageActive, isStagePlayerSnapshotEnabled, playQueue, playerState]);
+    }, [activePlaybackContext, audioSrc, cachedCoverUrl, coverUrl, currentSong, duration, effectiveLoopMode, getSyntheticStageLyricsTime, isFmMode, isNowPlayingStageActive, isStagePlayerSnapshotEnabled, playbackRoute, playQueue, playerState]);
 
     useEffect(() => {
         if (!window.electron?.onRemoteControlCommand) {
@@ -624,14 +633,17 @@ export const useElectronPlaybackBridge = ({
                     return;
                 }
 
-                const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : audioElement?.duration;
+                const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : getObservedMedia(audioElement)?.duration;
                 const upperBound = typeof safeDuration === 'number' && Number.isFinite(safeDuration) && safeDuration > 0
                     ? safeDuration
                     : command.time;
                 const nextTime = Math.max(0, Math.min(command.time, upperBound));
                 // During a blend the visible track is the outgoing one; route through the same
                 // cancel-and-resume the window's bar uses instead of moving the hidden incoming deck.
-                if (onRemoteTransitionSeek?.(nextTime)) {
+                // mpv seeks on the HiFi route; like the deck's seek below, it leaves a paused track paused.
+                if (seekHifiRoute(nextTime)) {
+                    // Handled: mpv has the song, the deck has no source.
+                } else if (onRemoteTransitionSeek?.(nextTime)) {
                     // Handled: the re-play seeks the deck itself once it reloads.
                 } else if (audioElement) {
                     audioElement.currentTime = nextTime;
@@ -703,7 +715,9 @@ export const useElectronPlaybackBridge = ({
                     // INCOMING deck, silent and holding a different track, so moving it moves
                     // nothing the listener can hear. The transition-aware path cancels the blend
                     // back onto the track on screen and seeks that instead.
-                    if (onRemoteTransitionSeek?.(nextTime)) {
+                    if (seekHifiRoute(nextTime)) {
+                        // Handled: mpv has the song on the HiFi route.
+                    } else if (onRemoteTransitionSeek?.(nextTime)) {
                         // Handled: that path seeks the deck it kept.
                     } else if (audioRef.current) {
                         audioRef.current.currentTime = nextTime;
