@@ -13,6 +13,7 @@ const FORWARD_PREFIXES = [
     '[netease',
     '[Prefetch]',
     '[AudioContext]',
+    '[SiteUpdate]',
 ];
 
 /** 一次会话最多转发这么多行；调试够了，也不会把日志刷爆。 */

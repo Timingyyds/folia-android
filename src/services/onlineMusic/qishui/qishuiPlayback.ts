@@ -87,6 +87,8 @@ const TRACK_NOT_RETURNED = 'Qishui did not return the track';
 
 export const qishuiPlayback: OnlinePlaybackProvider = {
     audioQualityLevels: ['standard', 'high', 'lossless', 'hires'],
+    // A VIP song's clip plays because third-party players get its whole audio encrypted only, not because of the account.
+    previewNoticeKey: 'status.songVipFullUnavailable',
     async getSongDetail(id) {
         let raw: unknown;
         try {

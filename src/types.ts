@@ -44,9 +44,21 @@ export interface LyricBackgroundVocal {
   alternateTexts?: LyricAlternateText[];
 }
 
-// 'both' stacks romanization above translation; only the shared bottom subtitle overlay renders both rows.
+// 'both' stacks romanization above translation.
 // Modes that lay translation out inside their own lyric layout (Monet, Pendolo, Lattice, Still) fall back to translation only.
+// The shared bottom subtitle overlay does not read this: it has its own rows (SubtitleOverlayLayout).
 export type SubtitleContentMode = 'translation' | 'romanization' | 'both' | 'none';
+
+// One row of the shared bottom subtitle overlay: the line on screen, the line after it, or the line on screen's translation / romanization.
+export type SubtitleOverlayRowSource = 'current' | 'next' | 'translation' | 'romanization';
+export type SubtitleOverlayFollowRow = Exclude<SubtitleOverlayRowSource, 'current'>;
+// The shared bottom subtitle overlay's rows, top to bottom, joined with '+' (stored and carried as this string).
+// One row is the current line, its translation or its romanization; two or three rows open with the current line,
+// and each row after it is the next line, the translation or the romanization.
+export type SubtitleOverlayLayout =
+  | Exclude<SubtitleOverlayRowSource, 'next'>
+  | `current+${SubtitleOverlayFollowRow}`
+  | `current+${SubtitleOverlayFollowRow}+${SubtitleOverlayFollowRow}`;
 
 export interface LyricAgent {
   id: string;
@@ -592,6 +604,11 @@ export const DEFAULT_SONNET_TUNING: SonnetTuning = {
 export interface BeatEffectSetting {
   on: boolean;
   strength: number;
+  /**
+   * An effect made of parts, each with its own slider (BeatEffectDef `parts`, 雾笺's 疏雨轻车): their
+   * strengths by part key, 0..2, a part never touched at 1. `strength` is then unused.
+   */
+  parts?: Record<string, number>;
 }
 
 /**

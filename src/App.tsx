@@ -78,6 +78,7 @@ import type { MediaId, OnlineProviderId, ProviderCollection } from './types/onli
 import { resolveSongCatalogRef } from './services/onlineMusic/catalogRefs';
 import { omni } from './services/onlineMusic/omni';
 import { consumeProgrammaticPause, playbackFade } from './services/playbackFade';
+import { applyNativeWindowSurface } from './svc/nativeWindowSurface';
 import { getSongArtistLabel, getSongCoverUrl } from './services/onlineMusic/songMetadata';
 import { isNavidromeEnabled } from './services/navidromeService';
 import { useAppNavigation } from './hooks/useAppNavigation';
@@ -85,6 +86,7 @@ import { useNeteaseLibrary } from './hooks/useNeteaseLibrary';
 import { useLibraryAccountController } from './library/app/useLibraryAccountController';
 import { createLibraryAccountSwitchCleanupPort } from './library/app/createLibraryAccountPort';
 import { useAppWallToolsHost } from './components/app/wall-tools/useAppWallToolsHost';
+import { useRemoteQueueCommands } from './components/app/playback/bridges/useRemoteQueueCommands';
 import { useLibraryAccountProviders } from './library/core/account/useLibraryAccount';
 import { resolveActiveProviderSummary } from './library/core/account/accountRules';
 import { useAppPreferences } from './hooks/useAppPreferences';
@@ -1567,6 +1569,19 @@ export default function App() {
         defaultTheme: DEFAULT_THEME,
         transparentBackground: shouldUseTransparentAppBackground,
     }), [bgMode, isDaylight, shouldUseTransparentAppBackground, theme]);
+    // 原生窗口 / WebView 的底色跟着主题走。挖孔屏、异形屏顶部那条**不属于页面内容**的带子
+    // 画的就是窗口底色，而它以前写死近黑（styles.xml + capacitor.config.json 都是 #09090b），
+    // 浅色主题下就是顶部一条黑带。页面透明（播放页）时只刷窗口，别把透明刷成实色。
+    const appBackgroundColor = String(
+        (appStyle as { [key: string]: unknown })['--bg-color'] ?? '',
+    );
+    useEffect(() => {
+        if (!appBackgroundColor) return;
+        applyNativeWindowSurface(
+            appBackgroundColor,
+            shouldUseTransparentAppBackground ? undefined : appBackgroundColor,
+        );
+    }, [appBackgroundColor, shouldUseTransparentAppBackground]);
     const { visualizerTheme, visualizerSubtitleTheme, visualizerGeometrySeed } = useMemo(() => buildVisualizerTheme({
         appStyle,
         theme,
@@ -2182,6 +2197,8 @@ export default function App() {
         clearQueue,
         saveCurrentQueueAsLocalPlaylist,
     });
+    // 遥控窗口展开的队列：点歌、下一首播放、移到末尾、移除，走浮岛的同一组队列动作。
+    useRemoteQueueCommands(wallToolsHost, playQueue, isNowPlayingControlDisabledRef);
     const homeModel = useHomeModel({
         account: accountController,
         activeProvider,

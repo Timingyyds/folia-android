@@ -42,11 +42,18 @@ export const visualizerWantsDrumHits = (settings: BeatClockSettings): boolean =>
     liveBeatEffects(settings).some(effect => effect.source === 'drums');
 
 /**
+ * True while a live effect on screen reads the drum hits and the vocal envelope (雾笺's 疏雨轻车):
+ * htdemucs separates the track with the vocal stem too.
+ */
+export const visualizerWantsStems = (settings: BeatClockSettings): boolean =>
+    liveBeatEffects(settings).some(effect => effect.source === 'stems');
+
+/**
  * True while either model is wanted, which is when the beat clock steps: it carries the heard time
- * and the track key that drum hits are read against, too.
+ * and the track key that drum hits and the vocal envelope are read against, too.
  */
 export const visualizerWantsBeatClock = (settings: BeatClockSettings): boolean =>
-    visualizerWantsBeats(settings) || visualizerWantsDrumHits(settings);
+    visualizerWantsBeats(settings) || visualizerWantsDrumHits(settings) || visualizerWantsStems(settings);
 
 /**
  * The strength of the live effect reading `source`, 0 with none. One per source per picture for

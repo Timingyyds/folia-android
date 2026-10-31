@@ -282,6 +282,7 @@ declare global {
     | { type: 'stop-export' }
     | { type: 'cancel-export' }
     | { type: 'toggle-like' }
+    | import('./types/remoteControl').RemoteQueueCommand
     | import('./types/remoteControl').RemoteActionActivation;
 
   type ElectronVideoExportStatus =
@@ -359,6 +360,9 @@ declare global {
     updatedAt: number;
     mainWindowWidth?: number;
     mainWindowHeight?: number;
+    queue?: readonly import('./types/remoteControl').RemoteQueueItem[];
+    queuePlayingKey?: string | null;
+    queueReadOnly?: boolean;
   }
 
   interface ElectronPlaybackSyncBridgeStatus {
@@ -1023,6 +1027,7 @@ declare global {
       /** Null when the main process cannot tell (a Wayland session): the page then uses its own mouse events. */
       getRemoteControlPointerInside: () => Promise<boolean | null>;
       onRemoteControlPointerInside: (callback: (inside: boolean) => void) => () => void;
+      setRemoteControlQueueExpansion: (wantedHeight: number | null, options?: { preview?: boolean; direction?: 'down' | 'up' }) => Promise<import('./types/remoteControl').RemoteQueueExpansion | null>;
       publishRemoteControlSnapshot: (snapshot: ElectronRemoteControlSnapshot) => Promise<boolean>;
       getRemoteControlSnapshot: () => Promise<ElectronRemoteControlSnapshot | null>;
       sendRemoteControlCommand: (command: ElectronRemoteControlCommand) => Promise<boolean>;

@@ -7,7 +7,7 @@ import { colorWithAlpha } from '../colorMix';
 
 import { type VisualizerSharedProps } from '../definition';
 import { buildFumeBackgroundScene } from './FumeBackground';
-import { getRecentCompletedLine, getUpcomingLines } from '../runtime';
+import { getRecentCompletedLine, getSubtitleNextLines } from '../runtime';
 import VisualizerShell from '../VisualizerShell';
 import { fumeBackgroundConfig } from './backgroundConfig';
 import VisualizerSubtitleOverlay from '../VisualizerSubtitleOverlay';
@@ -72,8 +72,7 @@ const VisualizerFume: React.FC<VisualizerProps> = (props) => {
         subtitleUpcomingLyricsBlur,
         isPlayerChromeHidden = false,
         hideTranslationSubtitle = false,
-        showSubtitleTranslation = true,
-        subtitleContentMode,
+        subtitleOverlayLayout,
         paused = false,
     } = props;
     const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -121,15 +120,16 @@ const VisualizerFume: React.FC<VisualizerProps> = (props) => {
     const runtime = useMemo(() => {
         const activeLine = lines[currentLineIndex] ?? null;
         const timeNow = currentTime.get();
+        const recentCompletedLine = getRecentCompletedLine({
+            lines,
+            currentLineIndex,
+            currentTime: timeNow,
+            getLineEndTime: getLineRenderEndTime,
+        });
         return {
             activeLine,
-            recentCompletedLine: getRecentCompletedLine({
-                lines,
-                currentLineIndex,
-                currentTime: timeNow,
-                getLineEndTime: getLineRenderEndTime,
-            }),
-            nextLines: getUpcomingLines(lines, currentLineIndex, 2),
+            recentCompletedLine,
+            nextLines: getSubtitleNextLines(lines, currentLineIndex, recentCompletedLine),
         };
     }, [currentLineIndex, lines]);
     const resolvedFumeTuning = useMemo<FumeTuning>(() => ({
@@ -411,8 +411,7 @@ const VisualizerFume: React.FC<VisualizerProps> = (props) => {
                 subtitleFontScale={subtitleFontScale}
                 isPlayerChromeHidden={isPlayerChromeHidden}
                 hideTranslationSubtitle={hideTranslationSubtitle}
-                showSubtitleTranslation={showSubtitleTranslation}
-                subtitleContentMode={subtitleContentMode}
+                subtitleOverlayLayout={subtitleOverlayLayout}
             />
         </VisualizerShell>
     );

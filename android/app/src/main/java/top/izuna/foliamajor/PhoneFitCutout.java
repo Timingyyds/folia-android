@@ -58,8 +58,15 @@ final class PhoneFitCutout {
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 WindowManager.LayoutParams attributes = window.getAttributes();
+                // API 30+ 必须用 ALWAYS。SHORT_EDGES 只允许窗口延伸到「短边」上的挖孔，
+                // 竖屏时顶部算短边没事，可一旦挖孔落在长边（横屏、或某些机型的侧边挖孔），
+                // 系统就拒绝延伸并把窗口 letterbox 掉——表现就是屏幕顶部一条不属于内容的
+                // 黑带（2026-10-31 定位：这里原来无条件写 SHORT_EDGES，还把 MainActivity
+                // 里 API 30+ 的 ALWAYS 覆盖掉了，两个入口互相打架）。
                 attributes.layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                        ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
                 window.setAttributes(attributes);
             }
             // 不再为系统栏留位。

@@ -118,11 +118,36 @@ const requestText = async (url: string): Promise<string | null> => {
     }
 };
 
-/**
- * 取回站点上的最新版本。先读 `version.json`，读不到再解析下载页。
- * 全失败返回 null：调用方静默跳过，不起任何提示。
- */
-export const fetchRemoteVersion = async (): Promise<RemoteVersion | null> => {
+/** 同一次进程内的最小间隔：重复挂载（HMR、重新挂载组件）不重复打请求。
+ *  窗口很小，不影响「每次打开 App 都能看到最新版本」。 */
+const MIN_INTERVAL_MS = 30 * 1000;
+const LAST_CALL_KEY = 'folia_site_update_last_call_at';
+
+/** 整页退路（version.json 读不到时去解析 index.html，那是十几 KB 的 HTML）：按天限流。
+ *  正常的更新检查走 version.json（151 字节），这条退路只在清单坏掉/缺失时才用得上。 */
+const PAGE_FALLBACK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const PAGE_FALLBACK_KEY = 'folia_site_update_page_fallback_at';
+
+const readStorage = (key: string): string | null => {
+    try {
+        return typeof window === 'undefined' ? null : window.localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+};
+
+const writeStorage = (key: string, value: string): void => {
+    try {
+        window.localStorage.setItem(key, value);
+    } catch {
+        // 写不进去不影响这次的结果，只是进程内的窗口还得靠内存计数器。
+    }
+};
+
+let lastCallAt = 0;
+
+/** 真正去站点读一次：先读 `version.json`，读不到再走按天限流的整页退路；全失败返回 null。 */
+const resolveRemoteVersion = async (): Promise<RemoteVersion | null> => {
     const manifest = await requestText(FOLIA_SITE_VERSION_URL);
     if (manifest) {
         try {
@@ -142,7 +167,15 @@ export const fetchRemoteVersion = async (): Promise<RemoteVersion | null> => {
             log(`version.json 解析失败：${error instanceof Error ? error.message : String(error)}`);
         }
     }
-    log('version.json 读不到，退回解析下载页');
+    // 退路按天限流：版本清单挂掉时，不至于每次启动都去拉整页 HTML。
+    const lastFallbackRaw = readStorage(PAGE_FALLBACK_KEY);
+    const lastFallback = lastFallbackRaw === null ? Number.NaN : Number(lastFallbackRaw);
+    if (Number.isFinite(lastFallback) && Date.now() - lastFallback < PAGE_FALLBACK_INTERVAL_MS) {
+        log('version.json 这次读不到；整页退路一天只用一次，今天已经用过，这次不提示');
+        return null;
+    }
+    writeStorage(PAGE_FALLBACK_KEY, String(Date.now()));
+    log('version.json 读不到，退回解析下载页（一天一次）');
     const page = await requestText(`${FOLIA_SITE_ORIGIN}/`);
     const version = page ? parseVersionFromPage(page) : null;
     if (!page || !version) {
@@ -155,4 +188,23 @@ export const fetchRemoteVersion = async (): Promise<RemoteVersion | null> => {
         downloadUrl: parseDownloadUrlFromPage(page) ?? FOLIA_SITE_DOWNLOAD_PAGE,
         notes: '',
     };
+};
+
+/**
+ * 取回站点上的最新版本。**每次打开 App 都会查**（只读 151 字节的 `version.json`），
+ * 站点一更新版本，用户下次进来就能看到提示——不做「一天一次」那种会让更新滞后的限流。
+ *
+ * 省的账在别处：真正烧流量的是网页那 1.45 MB，不是这个一百多字节的清单；只保留一个
+ * 30 秒的进程内窗口，挡住重复挂载造成的连打。
+ * `force` 留给「立即检查」按钮，绕开窗口。
+ */
+export const fetchRemoteVersion = async (options: { force?: boolean } = {}): Promise<RemoteVersion | null> => {
+    const now = Date.now();
+    if (!options.force && now - lastCallAt < MIN_INTERVAL_MS) {
+        log('30 秒内刚查过（同一进程），这次跳过');
+        return null;
+    }
+    lastCallAt = now;
+    writeStorage(LAST_CALL_KEY, String(now));
+    return resolveRemoteVersion();
 };

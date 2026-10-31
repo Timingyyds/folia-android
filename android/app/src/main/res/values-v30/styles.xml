@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 30+ 用 always：允许窗口无条件延伸到挖孔区域。
+     SHORT_EDGES 只在「短边」上的挖孔才允许延伸，挖孔落在长边（横屏、或某些机型的侧边挖孔）
+     时系统会把窗口 letterbox 掉，屏幕顶部就出现一条不属于内容的黑带。
+     主题里先声明一次，是为了让**第一帧**（我们自己的代码还没跑起来之前）就不 letterbox。 -->
+<resources>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentTransitions">false</item>
+        <item name="android:background">@null</item>
+        <item name="android:windowBackground">#09090b</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+
+</resources>

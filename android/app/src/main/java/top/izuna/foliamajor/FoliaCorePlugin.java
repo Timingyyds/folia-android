@@ -1163,6 +1163,72 @@ public class FoliaCorePlugin extends Plugin {
         }
     }
 
+    /**
+     * 让原生窗口（以及需要时的 WebView）底色跟随应用主题。
+     *
+     * 挖孔 / 异形屏顶部那条「不属于内容」的带子，画的是窗口底色；而它此前是写死的近黑
+     * （styles.xml 的 windowBackground 与 capacitor.config.json 的 backgroundColor 都是 #09090b）。
+     * 浅色主题下那条带子就是一条黑带——2026-10-31 用户报的「顶部有一条空带/黑带」。
+     * 这里由 JS 把当前主题底色推过来，让那条带子至少和界面同色。
+     *
+     * 参数：windowColor 必给（#RRGGBB / #AARRGGBB / #RGB / transparent）；webViewColor 可选，
+     * 只在页面本身不透明时给——播放页那种「透明背景」模式不要传，免得把透明刷成实色。
+     */
+    @PluginMethod
+    public void setWindowSurfaceColor(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("no activity");
+            return;
+        }
+        Integer windowColor = parseHexColor(call.getString("windowColor", null));
+        Integer webViewColor = parseHexColor(call.getString("webViewColor", null));
+        activity.runOnUiThread(() -> {
+            try {
+                android.view.Window window = activity.getWindow();
+                if (windowColor != null) {
+                    window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(windowColor));
+                    android.view.View decor = window.getDecorView();
+                    if (decor != null) {
+                        decor.setBackgroundColor(windowColor);
+                    }
+                }
+                if (webViewColor != null && getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().setBackgroundColor(webViewColor);
+                }
+                JSObject result = new JSObject();
+                result.put("windowColor", windowColor == null ? null : String.format("#%08X", windowColor));
+                result.put("webViewColor", webViewColor == null ? null : String.format("#%08X", webViewColor));
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    /** "#RRGGBB" / "#AARRGGBB" / "#RGB" / "transparent" → ARGB int；读不出返回 null（不动原样）。 */
+    private static Integer parseHexColor(String raw) {
+        if (raw == null) return null;
+        String text = raw.trim();
+        if (text.isEmpty()) return null;
+        if (text.startsWith("#")) text = text.substring(1);
+        if ("transparent".equalsIgnoreCase(text)) return 0;
+        try {
+            if (text.length() == 6) return (int) (0xFF000000L | Long.parseLong(text, 16));
+            if (text.length() == 8) return (int) Long.parseLong(text, 16);
+            if (text.length() == 3) {
+                StringBuilder expanded = new StringBuilder();
+                for (int index = 0; index < text.length(); index += 1) {
+                    expanded.append(text.charAt(index)).append(text.charAt(index));
+                }
+                return (int) (0xFF000000L | Long.parseLong(expanded.toString(), 16));
+            }
+        } catch (NumberFormatException ignored) {
+            // 颜色串不合法就当没给：宁可不改，也不要把界面刷成黑色。
+        }
+        return null;
+    }
+
     @ActivityCallback
     private void handlePickedAudio(PluginCall call, ActivityResult activityResult) {
         isAudioPickerOpen = false;

@@ -50,9 +50,14 @@ final class AdaptiveLayout {
             View decor = window.getDecorView();
             WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
 
-            // targetSdk 35+ 已经强制 edge-to-edge，这里唯一还需要做的就是系统栏的显隐。
-            // 再次声明 decor 布局策略，避免启动阶段被系统栏重新插入 inset。
-            WindowCompat.setDecorFitsSystemWindows(window, !enabled);
+            // 始终 edge-to-edge：这个开关现在只管系统栏**显隐**，不再决定要不要为系统栏留位。
+            //
+            // 原来这里写的是 setDecorFitsSystemWindows(window, !enabled)：关掉开关就 true，
+            // 系统于是把状态栏/挖孔的高度垫成窗口 inset，WebView 被顶下来一条——屏幕顶部就
+            // 出现一条不属于内容的空带/黑带（2026-10-31 用户报的现象之一）。而 MainActivity
+            // 启动时又强制全屏（decorFits=false），两个入口互相打架，谁后跑谁说了算。
+            // 现在统一成「永远不留位」，开关只控制状态栏/导航栏显示还是隐藏。
+            WindowCompat.setDecorFitsSystemWindows(window, false);
             if (enabled) {
                 controller.hide(WindowInsetsCompat.Type.systemBars());
                 controller.setSystemBarsBehavior(

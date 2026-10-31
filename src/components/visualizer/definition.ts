@@ -19,6 +19,7 @@ import {
     type PendoloTuning,
     type SonnetTuning,
     type SubtitleContentMode,
+    type SubtitleOverlayLayout,
     type TemperaTuning,
     type Theme,
     type TiltTuning,
@@ -101,6 +102,8 @@ export interface VisualizerSharedProps {
     hideTranslationSubtitle?: boolean;
     showSubtitleTranslation?: boolean;
     subtitleContentMode?: SubtitleContentMode;
+    /** The shared bottom subtitle's rows (VisualizerSubtitleOverlay); it does not read subtitleContentMode. */
+    subtitleOverlayLayout?: SubtitleOverlayLayout;
     paused?: boolean;
     onBack?: () => void;
     isPanelOpen?: boolean;
@@ -167,6 +170,8 @@ export interface VisualizerQuickControlsProps<T = any> {
     tuning: T;
     onTuningChange: (patch: Partial<T>) => void;
     settings: VisualizerTuningSettings;
+    /** Closes the player panel the controls sit in: for a control that opens something on the player page itself (Machi's viewfinder bar). */
+    onClosePanel?: () => void;
 }
 
 export interface VisualizerRegistryEntry {
@@ -236,6 +241,20 @@ export interface VisualizerRegistryEntry {
      * screen reads it (beatClockTargets.ts).
      */
     beatEffects?: readonly BeatEffectDef[];
+    /*
+     * Work started at app start when this is the saved style, behind the first-screen splash, so the
+     * style's first mount does not wait for it (雾笺: nebbia/nebbiaShaderWarmup.ts compiles its shaders
+     * in the background). It must not block the main thread for long, and it should import its code
+     * lazily: every entry is loaded eagerly at start-up. Run by prewarmVisualizers.ts.
+     */
+    prewarm?: () => void;
+    /*
+     * True when `prewarm` also runs for a style that is not the saved one, once the first screen is up
+     * and the page is idle: for a cost that otherwise lands on the first switch to the style (雾笺's
+     * cold shader compile, which can outlast the switch's wait for the first frame). Costs every user a
+     * little at each start, so only for a style whose first switch is otherwise slow.
+     */
+    prewarmWhenIdle?: boolean;
 }
 
 export interface FoliumTunable {
