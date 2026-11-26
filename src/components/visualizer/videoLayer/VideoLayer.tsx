@@ -26,14 +26,19 @@ const VideoLayer: React.FC<VideoLayerProps> = ({ paused }) => {
     const pausedRef = useRef(paused);
     pausedRef.current = paused;
     const alignRef = useRef<() => void>(() => {});
-    const { enabled, url, opacity, fit, localFileUrl } = useVideoLayerSettingsStore(useShallow(state => ({
+    const { enabled, url, opacity, fit, localFileUrl, onlineWallpaperUrl, onlineWallpaperKind } = useVideoLayerSettingsStore(useShallow(state => ({
         enabled: state.videoLayerEnabled,
         url: state.videoLayerUrl,
         opacity: state.videoLayerOpacity,
         fit: state.videoLayerFit,
         localFileUrl: state.localFileUrl,
+        onlineWallpaperUrl: state.onlineWallpaperUrl,
+        onlineWallpaperKind: state.onlineWallpaperKind,
     })));
-    const source = localFileUrl ?? (url || null);
+    // 本地视频 > 在线壁纸 > 手填 URL。
+    const source = localFileUrl ?? onlineWallpaperUrl ?? (url || null);
+    // 图片壁纸不需要跟着音乐走，也不该用 <video> 去解码。
+    const isImage = !localFileUrl && onlineWallpaperKind === 'image' && Boolean(onlineWallpaperUrl);
     const active = enabled && Boolean(source);
 
     useEffect(() => {
@@ -116,6 +121,19 @@ const VideoLayer: React.FC<VideoLayerProps> = ({ paused }) => {
     }, [active, paused]);
 
     if (!active || !source) return null;
+
+    if (isImage) {
+        return (
+            <img
+                key={source}
+                src={source}
+                alt=""
+                aria-hidden
+                className="absolute inset-0 h-full w-full pointer-events-none"
+                style={{ opacity, objectFit: fit }}
+            />
+        );
+    }
 
     return (
         <video

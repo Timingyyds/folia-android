@@ -66,45 +66,89 @@ const createAppQr = async (): Promise<AppQrState | null> => {
 
 const finalizeAppLogin = async (state: AppQrState): Promise<void> => {
   const bag: Record<string, string> = {};
-  const walk = (node: any) => {
-    if (!node || typeof node !== 'object') return;
+  // 事件里的 cookie 有两种形状：扁平的 { name, value } 条目，和把整串 cookie 塞进
+  // commConf.value 的嵌套形状（微信通道常见）。两种都吃，否则拿不到 qqmusic_key 与账号 id。
+  const walk = (node: any, depth = 0) => {
+    if (!node || typeof node !== 'object' || depth > 6) return;
     for (const [key, entry] of Object.entries<any>(node)) {
-      if (entry && typeof entry === 'object' && typeof entry.value === 'string') {
+      if (typeof entry === 'string') {
+        if (entry) bag[key] = entry;
+        continue;
+      }
+      if (!entry || typeof entry !== 'object') continue;
+      if (typeof entry.value === 'string' && entry.value) {
         const name = String(entry.name ?? key);
-        if (entry.value) bag[name] = entry.value;
-      } else if (entry && typeof entry === 'object') walk(entry);
+        bag[name] = entry.value;
+        const nested = entry.value.trim();
+        if (nested.startsWith('{')) {
+          try { walk(JSON.parse(nested), depth + 1); } catch { /* 不是 JSON */ }
+        }
+      }
+      walk(entry, depth + 1);
     }
   };
   walk(state.events.cookies);
-  const musickey = bag.qqmusic_key || bag.qm_keyst || '';
-  const uid = String(bag.qqmusic_uin || bag.uin || '').replace(/^o/, '');
-  if (!musickey || !uid) return;
+  const musickey = bag.qqmusic_key || bag.qm_keyst || bag.musickey || '';
+  // 扫码回包里 qqmusic_uin 常是占位的 "0"：按「非 0 才要」挑账号 id，微信通道优先 wxuin
+  // （参考实现 qqCookieUin 的规则）。挑错就只剩 musicid=0，所有账号接口都回 10006 未登录。
+  const firstNonZero = (...values: unknown[]): string => {
+    for (const value of values) {
+      const text = String(value ?? '').replace(/^o/, '').trim();
+      if (text && text !== '0') return text;
+    }
+    return '';
+  };
+  const wechatSession = bag.login_type === '2' || Boolean(bag.wxuin);
+  const uid = wechatSession
+    ? firstNonZero(bag.wxuin, bag.qqmusic_uin, bag.uin, bag.str_musicid)
+    : firstNonZero(bag.qqmusic_uin, bag.uin, bag.str_musicid, bag.wxuin);
+  if (!musickey || !uid) {
+    console.log('[QQ-finalize] missing credentials', { hasKey: Boolean(musickey), hasUid: Boolean(uid), wechat: wechatSession, cookies: Object.keys(bag).slice(0, 24) });
+    return;
+  }
+  const loginType = qqLoginTypeOf(bag);
   const qid2 = bag.qrcode_id || state.qid;
-  const exchanged = await musicuPost('Login', { musicid: Number(uid), qrCodeID: qid2, token: musickey }, { tmeLoginType: 6 });
+  // 微信账号的 musicid 超过 2^53：转成 number 会丢精度，上游就按错的 uin 回 10006。全程按字符串传。
+  const exchanged = await musicuPost('Login', { musicid: uid, qrCodeID: qid2, token: musickey, tmeLoginType: loginType }, { tmeLoginType: loginType });
   const ex = exchanged?.data ?? null;
   const finalKey = String(ex?.musickey || musickey);
+  // 扫码事件里已经带着昵称与头像：换证回来的资料若缺字段，至少界面上不是「0」。
+  const scanned = (state.events.scanned ?? {}) as { userNick?: string; userLogo?: string };
   const credential: any = {
-    musicid: String(ex?.musicid ?? uid),
+    musicid: firstNonZero(ex?.musicid, uid),
     musickey: finalKey,
-    encryptUin: String(ex?.encryptUin ?? bag.euin ?? '').replace(/\*+$/, ''),
+    ...(scanned.userNick ? { nickname: scanned.userNick } : {}),
+    ...(scanned.userLogo ? { logo: scanned.userLogo } : {}),
     encryptUin: String(ex?.encryptUin ?? bag.euin ?? '').replace(/\*+$/, ''),
     openid: String(ex?.openid ?? ''),
     refresh_token: String(ex?.refresh_token ?? ''),
     refresh_key: String(ex?.refresh_key ?? ''),
     unionid: String(ex?.unionid ?? ''),
-    loginType: Number(ex?.loginType ?? 6) || 6,
+    loginType: Number(ex?.loginType ?? loginType) || loginType,
   };
   const token = sealSession(credential);
   writeProviderSessionValue('qq', 'cookie', `qqmusic_session=${token}`);
   state.events.ready = true;
-  console.log('[QQ-finalize] stored cookieLen', token.length, 'musicid', credential.musicid, 'keyLen', finalKey.length);
+  console.log('[QQ-finalize] stored cookieLen', token.length, 'musicid', credential.musicid, 'loginType', credential.loginType, 'keyLen', finalKey.length);
+};
+
+/**
+ * 这条会话是哪种账号：微信通道的 cookie 带 wxuin / login_type=1，QQ 通道没有。
+ * 换长期凭据时必须照原通道的 tmeLoginType 回去，否则上游按 QQ 解析微信账号，回来的资料全是 0。
+ */
+const qqLoginTypeOf = (bag: Record<string, string>): number => {
+  const explicit = Number(bag.tmeLoginType);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  if (bag.wxuin || bag.login_type === '1') return 1;
+  return 6;
 };
 
 const exchangeAppCredential = async (qid: string, evt: any): Promise<any> => {
-  const musicid = evt?.musicid ?? evt?.musicId ?? evt?.userid ?? 0;
+  const musicid = evt?.musicid ?? evt?.musicId ?? evt?.userid ?? evt?.wxuin ?? 0;
   const token = evt?.token ?? evt?.musickey ?? evt?.key ?? '';
+  const loginType = Number(evt?.tmeLoginType) > 0 ? Number(evt.tmeLoginType) : (evt?.wxuin ? 1 : 6);
   if (!musicid || !token) return null;
-  const req = await musicuPost('Login', { musicid: Number(musicid), qrCodeID: qid, token, tmeLoginType: 6 });
+  const req = await musicuPost('Login', { musicid: String(musicid), qrCodeID: qid, token, tmeLoginType: loginType }, { tmeLoginType: loginType });
   const data = req?.data ?? null;
   return data && data.musickey ? data : null;
 };
@@ -184,6 +228,18 @@ export const extensionQqRequest = async (
       return { status: 200, body: { code: 802, message: '已扫描，等待手机确认' } };
     }
     if (evts.cookies) {
+      // 换证通常由 cookies 事件当场完成；万一那一次没认出来（微信通道的嵌套 cookie），轮询时补做，
+      // 最多三次。试满仍拿不到会话就说清楚失败，别让界面永远停在「正在读取账号」。
+      if (!evts.finalizing && (evts.finalizeTries ?? 0) < 3) {
+        evts.finalizeTries = (evts.finalizeTries ?? 0) + 1;
+        evts.finalizing = true;
+        void finalizeAppLogin(state)
+          .catch(error => console.log('[QQ-finalize] retry failed', String(error).slice(0, 120)))
+          .finally(() => { evts.finalizing = false; });
+      }
+      if (!evts.ready && (evts.finalizeTries ?? 0) >= 3 && !evts.finalizing) {
+        return { status: 200, body: { code: 800, message: '已授权但读取账号失败，请重新扫码' } };
+      }
       return { status: 200, body: { code: 802, message: '已授权，正在读取账号', retryable: true } };
     }
     if (evts.canceled || evts.loginFailed) return { status: 200, body: { code: 800, message: '已取消或登录失败' } };

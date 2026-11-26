@@ -59,6 +59,18 @@ export const useAiConnectionTest = (payload: AiConnectionTestPayload, keySaved?:
     return { running, result, run };
 };
 
+/** 连接测试的短状态：只画一行成功 / 失败文字（设置页的行尾用它）。 */
+export const AiConnectionTestStatus: React.FC<{ result: AiConnectionTestResult }> = ({ result }) => {
+    const { t } = useTranslation();
+    const { isDaylight } = useSettingsKitTheme();
+    const statusColor = result.ok ? (isDaylight ? '#15803d' : '#4ade80') : (isDaylight ? '#b91c1c' : '#f87171');
+    return (
+        <span className="whitespace-nowrap text-[13px] font-semibold" style={{ color: statusColor }} role="status" aria-live="polite">
+            {result.ok ? t('options.aiTestSuccess') : t('options.aiTestFailed')}
+        </span>
+    );
+};
+
 export const AiConnectionTestReply: React.FC<{ result: AiConnectionTestResult }> = ({ result }) => {
     const { t } = useTranslation();
     const { isDaylight } = useSettingsKitTheme();

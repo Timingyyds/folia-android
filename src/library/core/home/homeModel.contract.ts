@@ -1,3 +1,4 @@
+import type { PersonalFmLaunch } from '../../../types/personalFm';
 import type { HomeViewTab, LocalLibraryGroup, LocalSong, SongResult } from '../../../types';
 import type { MediaId, ProviderAccountSummary, ProviderCollection, ProviderUser } from '../../../types/onlineMusic';
 import type { NavidromeConfig, SubsonicAlbum, SubsonicArtist, SubsonicPlaylist, SubsonicSong } from '../../../types/navidrome';
@@ -203,7 +204,7 @@ export interface LibraryHomePort {
     refreshLocalSongs(): Promise<void> | void;
     /** 订阅扫描进度；返回退订函数。 */
     subscribeScanProgress(listener: (progress: LibraryHomeScanProgress | null) => void): () => void;
-    getPersonalFm(): Promise<SongResult[]>;
+    getPersonalFm(selection?: PersonalFmLaunch, providerId?: string): Promise<SongResult[]>;
     playPersonalFm(song: SongResult, queue: SongResult[]): void;
     describeOnlineCollection(collection: Record<string, unknown>, providerId: string): LibraryCollectionDescriptor;
     describeLocalGroup(group: LocalLibraryGroup): LibraryCollectionDescriptor;

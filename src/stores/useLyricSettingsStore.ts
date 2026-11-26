@@ -73,6 +73,8 @@ const readStoredPreferredAlternativeLyricSource = (): LyricProviderSource => {
 };
 
 const LYRIC_LINE_RULES_KEY = 'lyrics_filter_rules';
+const AUTO_AI_LYRIC_SEGMENTATION_KEY = 'lyrics_auto_ai_segmentation';
+const KEEP_PROVIDER_WORD_TIMING_KEY = 'lyrics_keep_provider_word_timing';
 // The single expression older versions saved. Read once into a rule; written back on every save
 // (or removed with that rule), so an older version still filters the same lines.
 const LEGACY_LYRIC_FILTER_PATTERN_KEY = 'lyrics_filter_pattern';
@@ -124,6 +126,11 @@ const readStoredLyricStaffAbsorbMode = (): LyricStaffAbsorbMode => {
 export type LyricSettingsState = {
     autoUseBestLyric: boolean;
     preferredAlternativeLyricSource: LyricProviderSource;
+    /**
+     * Keep a platform's own word-level lyrics (`prefersOwnWordByWord`) over every source but the preferred
+     * one in the automatic pick; off, they are matched like any other source's (issue #1127).
+     */
+    keepProviderWordTiming: boolean;
     localLyricsPriority: LocalLyricsPriority;
     localLyricFormatOrder: LocalLyricFileFormat[];
     globalLyricTimelineOffsetMs: number;
@@ -133,8 +140,11 @@ export type LyricSettingsState = {
     lyricStaffMinDwellSeconds: number;
     lyricStaffAbsorbMode: LyricStaffAbsorbMode;
     lyricStaffPattern: string;
+    /** Run AI word segmentation by itself on a song that has none saved yet (issue #960). */
+    autoAiLyricSegmentation: boolean;
     handleToggleAutoUseBestLyric: (enable: boolean) => void;
     handleSetPreferredAlternativeLyricSource: (source: LyricProviderSource) => void;
+    handleToggleKeepProviderWordTiming: (enable: boolean) => void;
     handleSetLocalLyricsPriority: (priority: LocalLyricsPriority) => void;
     handleSetLocalLyricFormatOrder: (order: LocalLyricFileFormat[]) => void;
     handleSetGlobalLyricTimelineOffsetMs: (offsetMs: number) => void;
@@ -143,11 +153,13 @@ export type LyricSettingsState = {
     handleSetLyricStaffMinDwellSeconds: (seconds: number) => void;
     handleSetLyricStaffAbsorbMode: (mode: LyricStaffAbsorbMode) => void;
     handleSetLyricStaffPattern: (pattern: string) => void;
+    handleToggleAutoAiLyricSegmentation: (enable: boolean) => void;
 };
 
 export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
     autoUseBestLyric: getStoredBoolean('auto_use_best_lyric', true),
     preferredAlternativeLyricSource: readStoredPreferredAlternativeLyricSource(),
+    keepProviderWordTiming: getStoredBoolean(KEEP_PROVIDER_WORD_TIMING_KEY, true),
     localLyricsPriority: readStoredLocalLyricsPriority(),
     localLyricFormatOrder: readStoredLocalLyricFormatOrder(),
     globalLyricTimelineOffsetMs: readStoredGlobalLyricTimelineOffsetMs(),
@@ -156,6 +168,8 @@ export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
     lyricStaffMinDwellSeconds: readStoredLyricStaffMinDwellSeconds(),
     lyricStaffAbsorbMode: readStoredLyricStaffAbsorbMode(),
     lyricStaffPattern: getStoredString('lyrics_staff_pattern', ''),
+    // Off by default: every song it runs on is a paid model request.
+    autoAiLyricSegmentation: getStoredBoolean(AUTO_AI_LYRIC_SEGMENTATION_KEY, false),
     handleToggleAutoUseBestLyric: (enable) => {
         setStoredBoolean('auto_use_best_lyric', enable);
         set({ autoUseBestLyric: enable });
@@ -176,6 +190,14 @@ export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
         // 让正在播的这首歌立刻按新偏好重新取歌词：清掉它在所有歌词源下的缓存副本。
         // 不这么做的话，切完设置仍会命中旧源的缓存，看起来像"切换没用"。
         void dropCachedLyricsForEverySource();
+    },
+    handleToggleKeepProviderWordTiming: (enable) => {
+        setStoredBoolean(KEEP_PROVIDER_WORD_TIMING_KEY, enable);
+        set({ keepProviderWordTiming: enable });
+        setStatusMessage({
+            type: 'info',
+            text: i18n.t('notifications.' + (enable ? 'keepProviderWordTimingOn' : 'keepProviderWordTimingOff')),
+        });
     },
     handleSetLocalLyricsPriority: (priority) => {
         if (typeof window !== 'undefined') {
@@ -254,12 +276,21 @@ export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
             localStorage.removeItem('lyrics_staff_pattern');
         }
     },
+    handleToggleAutoAiLyricSegmentation: (enable) => {
+        setStoredBoolean(AUTO_AI_LYRIC_SEGMENTATION_KEY, enable);
+        set({ autoAiLyricSegmentation: enable });
+        setStatusMessage({
+            type: 'info',
+            text: i18n.t('notifications.' + (enable ? 'autoAiLyricSegmentationOn' : 'autoAiLyricSegmentationOff')),
+        });
+    },
 }));
 
 /** The lyric-sourcing half of the former settings snapshot. */
 export const selectLyricSettingsSnapshot = (state: LyricSettingsState) => ({
     autoUseBestLyric: state.autoUseBestLyric,
     preferredAlternativeLyricSource: state.preferredAlternativeLyricSource,
+    keepProviderWordTiming: state.keepProviderWordTiming,
     localLyricsPriority: state.localLyricsPriority,
     localLyricFormatOrder: state.localLyricFormatOrder,
     globalLyricTimelineOffsetMs: state.globalLyricTimelineOffsetMs,
@@ -268,8 +299,10 @@ export const selectLyricSettingsSnapshot = (state: LyricSettingsState) => ({
     lyricStaffMinDwellSeconds: state.lyricStaffMinDwellSeconds,
     lyricStaffAbsorbMode: state.lyricStaffAbsorbMode,
     lyricStaffPattern: state.lyricStaffPattern,
+    autoAiLyricSegmentation: state.autoAiLyricSegmentation,
     handleToggleAutoUseBestLyric: state.handleToggleAutoUseBestLyric,
     handleSetPreferredAlternativeLyricSource: state.handleSetPreferredAlternativeLyricSource,
+    handleToggleKeepProviderWordTiming: state.handleToggleKeepProviderWordTiming,
     handleSetLocalLyricsPriority: state.handleSetLocalLyricsPriority,
     handleSetLocalLyricFormatOrder: state.handleSetLocalLyricFormatOrder,
     handleSetGlobalLyricTimelineOffsetMs: state.handleSetGlobalLyricTimelineOffsetMs,
@@ -278,6 +311,7 @@ export const selectLyricSettingsSnapshot = (state: LyricSettingsState) => ({
     handleSetLyricStaffMinDwellSeconds: state.handleSetLyricStaffMinDwellSeconds,
     handleSetLyricStaffAbsorbMode: state.handleSetLyricStaffAbsorbMode,
     handleSetLyricStaffPattern: state.handleSetLyricStaffPattern,
+    handleToggleAutoAiLyricSegmentation: state.handleToggleAutoAiLyricSegmentation,
     lyricStaffPatternError: getLyricStaffPatternError(state.lyricStaffPattern),
 });
 

@@ -273,8 +273,12 @@ public class FoliaBridgePlugin extends Plugin {
 
     private java.io.File defaultLogDir() {
         java.io.File dir = getContext().getExternalFilesDir("logs");
-        if (dir == null) return null;
-        if (!dir.exists() && !dir.mkdirs()) return null;
+        if (dir == null || (!dir.exists() && !dir.mkdirs())) {
+            // 部分定制系统/存储受限的设备拿不到外置目录：退回应用内部目录，
+            // 否则「写入本地文件」会一直失败，看起来像日志模块坏了。
+            dir = new java.io.File(getContext().getFilesDir(), "logs");
+            if (!dir.exists() && !dir.mkdirs()) return null;
+        }
         return dir;
     }
 

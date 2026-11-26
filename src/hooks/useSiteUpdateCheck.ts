@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { compareVersions, fetchRemoteVersion } from '../utils/system/appVersionCheck';
+import { resolveAppVersion } from '../utils/system/appVersion';
 import { offerRemoteVersion } from '../stores/useAppUpdatePromptStore';
 
 // src/hooks/useSiteUpdateCheck.ts
@@ -22,23 +23,30 @@ export const useSiteUpdateCheck = (): void => {
 
     useEffect(() => {
         const run = () => {
-            const appVersion = typeof __APP_VERSION__ === 'undefined' ? null : __APP_VERSION__;
-            if (!appVersion || inFlightRef.current) return;
+            if (inFlightRef.current) return;
             inFlightRef.current = true;
-            console.log(`[SiteUpdate] 开始检查，本机版本 ${appVersion}`);
-            void fetchRemoteVersion().then((remote) => {
-                if (!remote) {
-                    console.log('[SiteUpdate] 这次没读到站点版本，不提示');
+            // 本机版本以安装包为准（见 utils/system/appVersion.ts）：
+            // package.json 与 build.gradle 的版本号不同步时，这里也不会再误报更新。
+            void resolveAppVersion().then((appVersion) => {
+                if (!appVersion) {
+                    console.log('[SiteUpdate] 读不到本机版本，不提示');
                     return;
                 }
-                const diff = compareVersions(String(appVersion), remote.version);
-                console.log(`[SiteUpdate] 本机 ${appVersion} vs 站点 ${remote.version}，比较结果 ${diff}`);
-                // 站点上一个不比本机新的版本不该提，等于也不提。
-                if (diff >= 0) {
-                    console.log('[SiteUpdate] 本机不比站点旧，不提示');
-                    return;
-                }
-                offerRemoteVersion(remote);
+                console.log(`[SiteUpdate] 开始检查，本机版本（安装包）${appVersion}`);
+                return fetchRemoteVersion().then((remote) => {
+                    if (!remote) {
+                        console.log('[SiteUpdate] 这次没读到站点版本，不提示');
+                        return;
+                    }
+                    const diff = compareVersions(String(appVersion), remote.version);
+                    console.log(`[SiteUpdate] 本机 ${appVersion} vs 站点 ${remote.version}，比较结果 ${diff}`);
+                    // 站点上一个不比本机新的版本不该提，等于也不提。
+                    if (diff >= 0) {
+                        console.log('[SiteUpdate] 本机不比站点旧，不提示');
+                        return;
+                    }
+                    offerRemoteVersion(remote);
+                });
             }).catch((error) => {
                 // 兜底：这一步不该抛，抛了也要留下痕迹。
                 console.log(`[SiteUpdate] 检查出错：${error instanceof Error ? error.message : String(error)}`);

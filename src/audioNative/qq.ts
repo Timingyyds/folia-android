@@ -54,7 +54,12 @@ const extractSessionToken = (cookieParam?: string): string => {
   return map.get('qqmusic_session') ?? readProviderSessionValue('qq', 'cookie')?.replace(/^.*qqmusic_session=/, '').replace(/;.*$/, '') ?? '';
 };
 
-const credentialFromRequest = (cookieParam?: string): QqCredential | null => unsealSession(extractSessionToken(cookieParam));
+const credentialFromRequest = (cookieParam?: string): QqCredential | null => {
+  const credential = unsealSession(extractSessionToken(cookieParam));
+  // musicid 是 0 的会话是旧版本写下的坏凭据：账号接口一律回 10006，当作没登录，让用户重新扫一次。
+  if (!credential || !credential.musicid || credential.musicid === '0') return null;
+  return credential;
+};
 
 // ---------------------------------------------------------------------------
 // 基础请求
@@ -93,7 +98,9 @@ const postMusicu = async (
         ct: 11, cv: 14090008, v: 14090008, chid: '10003505', tmeAppID: 'qqmusic',
         OpenUDID: randomHex(16).toLowerCase(), udid: randomHex(16).toLowerCase(),
         os_ver: '10', phonetype: 'MI 6', devicelevel: '29', newdevicelevel: '29',
-        qq: credential.musicid, authst: credential.musickey, tmeLoginType: credential.loginType,
+        // 账号类接口（GetPlaylistByUin 等）按 comm.uin 认人：只给 qq 时上游回 10006「未登录」。
+        uin: credential.musicid, qq: credential.musicid, format: 'json', platform: 'yqq.json',
+        authst: credential.musickey, tmeLoginType: credential.loginType,
         ...commOverride,
       }
     : { ct: 24, cv: 0, uin: 0, format: 'json', ...commOverride };
@@ -337,6 +344,36 @@ const qqMusicuWrite = async (
   return qqLikeWriteAccepted(response.raw);
 };
 
+/**
+ * 雷达（刷歌）的一页：`music.recommend.TrackRelationServer` 的 `GetRadarSong`，条目在 `VecSongs[].Track`，
+ * 与 `track_info` 同形（带 mid、album.mid、interval），正规化后封面与播放都能用。
+ *
+ * 扩展层没有 QQ 音乐客户端的设备身份（QIMEI、uid/sid），猜你喜欢电台（id 99）对这样的请求只回
+ * `code: 1000` 且 `tracks: null` —— 即使凭证有效也一样。雷达只认凭证，所以它当猜你喜欢与每日 30 首的兜底。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const radarSongs = async (page: number, credential: QqCredential): Promise<any[]> => {
+  const response = await postMusicu({
+    module: 'music.recommend.TrackRelationServer',
+    method: 'GetRadarSong',
+    param: { Page: page, ReqType: 0, FavSongs: [], EntranceSongs: [] },
+  }, credential);
+  const data = (reqData(response) ?? {}) as any;
+  const entries: any[] = Array.isArray(data?.VecSongs) ? data.VecSongs : [];
+  return entries.map((entry: any) => entry?.Track)
+    .filter((track: any) => track && typeof track.mid === 'string' && track.mid.length > 0);
+};
+
+// 雷达一次几首，续歌要换页才不会一直给同一批（同一页反复要，回来的是同一批歌）。
+// 页码只在内存里，换账号或登出时从头开始。
+let radarPage = 1;
+const RADAR_MAX_PAGE = 100;
+const nextRadarPage = (): number => {
+  const page = radarPage;
+  radarPage = page >= RADAR_MAX_PAGE ? 1 : page + 1;
+  return page;
+};
+
 export const handleQqEndpoint = async (
   operation: string,
   path: string,
@@ -466,9 +503,30 @@ export const handleQqEndpoint = async (
       }
       case '/user/playlist': {
         if (!credential) return answer({ code: 401, message: 'login required' }, 401);
-        const musicu = await postMusicu({ module: 'music.musicasset.PlaylistBaseRead', method: 'GetPlaylistByUin', param: { uin: credential.musicid } }, credential);
-        const raw: any = reqData(musicu) ?? {};
-        const list: any[] = Array.isArray(raw?.v_playlist) ? raw.v_playlist : (Array.isArray(raw?.playlist) ? raw.playlist : []);
+        const collect = (data: any): any[] => (
+          Array.isArray(data?.v_playlist) ? data.v_playlist : (Array.isArray(data?.playlist) ? data.playlist : [])
+        );
+        // 微信账号的 musicid 可能是占位的 0：先照账号 id 读，空的话换成凭据里的加密 uin 再读一次
+        // （QQ 音乐自己的客户端也是这么认账号的）。
+        let param: Record<string, unknown> = { uin: String(credential.musicid) };
+        let musicu = await postMusicu({ module: 'music.musicasset.PlaylistBaseRead', method: 'GetPlaylistByUin', param }, credential);
+        let list = collect(reqData(musicu) ?? {});
+        if (list.length === 0 && credential.encryptUin) {
+          param = { uin: 0, encrypt_uin: credential.encryptUin };
+          musicu = await postMusicu({ module: 'music.musicasset.PlaylistBaseRead', method: 'GetPlaylistByUin', param }, credential);
+          const retried = collect(reqData(musicu) ?? {});
+          if (retried.length > 0) list = retried;
+        }
+        const block = (musicu.raw?.req_0 ?? {}) as any;
+        console.log('[QQ-playlists]', JSON.stringify({
+          musicid: credential.musicid,
+          loginType: credential.loginType,
+          hasEncrypt: Boolean(credential.encryptUin),
+          count: list.length,
+          code: block.code,
+          uinParam: param.uin,
+          dataKeys: Object.keys(block.data ?? {}).slice(0, 12),
+        }));
         // provider 归一化吃 QQ 原生字段（dirName/bigpicUrl/songNum/dirId/tid/dirShow/uin），原样透传，仅封面升 https
         const mapped = list.map((item: any) => ({
           ...item,
@@ -547,7 +605,10 @@ export const handleQqEndpoint = async (
         if (radioId === 99) {
           const guess = await postMusicu({ module: 'music.radioProxy.MbTrackRadioSvr', method: 'get_radio_track', param: { id: 99, firstplay: 1, num: 15 } }, credential);
           const gdata = (reqData(guess) ?? {}) as any;
-          return answer({ code: 200, songs: Array.isArray(gdata?.tracks) ? gdata.tracks : [] });
+          const tracks: unknown[] = Array.isArray(gdata?.tracks) ? gdata.tracks : [];
+          // 猜你喜欢电台在扩展层读不到（没有设备身份，上游回 1000），用雷达的一页顶上。
+          if (!tracks.length && credential) return answer({ code: 200, songs: await radarSongs(nextRadarPage(), credential) });
+          return answer({ code: 200, songs: tracks });
         }
         const musicu = await postMusicu({ module: 'pf.radiosvr', method: 'GetRadiosonglist', param: { id: radioId, firstplay: 0, num: 9 } }, credential);
         const data = (reqData(musicu) ?? {}) as any;
@@ -603,7 +664,10 @@ export const handleQqEndpoint = async (
         if (radioId === 99) {
           const guess = await postMusicu({ module: 'music.radioProxy.MbTrackRadioSvr', method: 'get_radio_track', param: { id: 99, firstplay: 1, num: 15 } }, credential);
           const gdata = (reqData(guess) ?? {}) as any;
-          return answer({ code: 200, songs: Array.isArray(gdata?.tracks) ? gdata.tracks : [] });
+          const tracks: unknown[] = Array.isArray(gdata?.tracks) ? gdata.tracks : [];
+          // 猜你喜欢电台在扩展层读不到（没有设备身份，上游回 1000），用雷达的一页顶上。
+          if (!tracks.length && credential) return answer({ code: 200, songs: await radarSongs(nextRadarPage(), credential) });
+          return answer({ code: 200, songs: tracks });
         }
         const musicu = await postMusicu({ module: 'pf.radiosvr', method: 'GetRadiosonglist', param: { id: radioId, firstplay: 0, num: 9 } }, credential);
         const data = (reqData(musicu) ?? {}) as any;
@@ -897,16 +961,46 @@ export const handleQqEndpoint = async (
       case '/user/albums':
         return answer({ code: 200, data: [] });
       case '/user/guess-you-like': {
-        const musicu = await postMusicu({ module: 'music.radioProxy.MbTrackRadioSvr', method: 'get_radio_track', param: { id: 99, firstplay: 1, num: 15 } }, credential);
-        const data = (reqData(musicu) ?? {}) as any;
-        const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
-        return answer({ code: 200, songs: tracks });
+        // 猜你喜欢要登录（后端同样回 401，不把匿名结果当个人推荐）。
+        if (!credential) return answer({ error: 'LOGIN_REQUIRED' }, 401);
+        // 先照官方做法问电台 99；扩展层缺设备身份时它回 1000、没有歌，这时用雷达的一页顶上。
+        const radio = await postMusicu(
+          { module: 'music.radioProxy.MbTrackRadioSvr', method: 'get_radio_track', param: { id: 99, firstplay: 1, num: 15 } },
+          credential,
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = (reqData(radio) ?? {}) as any;
+        const tracks: unknown[] = Array.isArray(data?.tracks) ? data.tracks : [];
+        if (tracks.length) return answer({ code: 200, songs: tracks });
+        const fallback = await radarSongs(nextRadarPage(), credential);
+        console.log('[QQ-ext] guess-you-like:radar-fallback', fallback.length);
+        return answer({ code: 200, songs: fallback });
       }
       case '/user/daily-songs': {
-        const musicu = await postMusicu({ module: 'music.radioProxy.MbTrackRadioSvr', method: 'get_radio_track', param: { id: 99, firstplay: 1, num: 30 } }, credential);
+        if (!credential) return answer({ error: 'LOGIN_REQUIRED' }, 401);
+        // QQ 自己的每日 30 首：`aiDissInfo` 的 dirid 202（optype 3），歌在 `songlist`。
+        // 以前这里借的是猜你喜欢电台，而电台在扩展层读不到，页面就一直空着。
+        const musicu = await postMusicu({
+          module: 'music.srfDissInfo.aiDissInfo',
+          method: 'uniform_get_Dissinfo',
+          param: { dirid: 202, optype: 3, tag: 1, userinfo: 0, pic_dpi: 300 },
+        }, credential);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const data = (reqData(musicu) ?? {}) as any;
-        const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
-        return answer({ code: 200, songs: tracks, data: tracks, total: tracks.length, more: false });
+        const songs: unknown[] = Array.isArray(data?.songlist) ? data.songlist : [];
+        if (songs.length) return answer({ code: 200, songs, total: songs.length, more: false });
+        // 当天的推荐还没生成（或上游拒了）时用雷达顶上，别让页面空着。
+        const fallback = await radarSongs(nextRadarPage(), credential);
+        console.log('[QQ-ext] daily-songs:radar-fallback', fallback.length);
+        return answer({ code: 200, songs: fallback, total: fallback.length, more: false });
+      }
+      case '/user/personal-fm': {
+        // 私人 FM：后端用雷达的同一页顶着（page 1–100），这样扩展层也有 FM，不必回落到猜你喜欢。
+        // 前端每次都要第 1 页（它分不清这批是进队列还是只给封面），换页由这里自己往前推。
+        if (!credential) return answer({ error: 'LOGIN_REQUIRED' }, 401);
+        const page = nextRadarPage();
+        const songs = await radarSongs(page, credential);
+        return answer({ code: 200, songs, page, more: songs.length > 0 });
       }
       case '/user/song/like': {
         // 红心/取消红心：QQ 自己的「我喜欢」是 dirId 201，先走 PlaylistDetailWrite，再退到
@@ -966,8 +1060,9 @@ export const handleQqEndpoint = async (
 };
 
 export const clearQqExtensionSession = (): void => {
-  // 登出由 providerStorage 层清理；这里同步清掉进行中的二维码状态
+  // 登出由 providerStorage 层清理；这里同步清掉进行中的二维码状态，推荐从雷达第一页重新开始
   qrImageStore.clear();
+  radarPage = 1;
 };
 
 void removeProviderSessionValue;

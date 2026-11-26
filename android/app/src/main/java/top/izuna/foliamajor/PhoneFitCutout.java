@@ -89,16 +89,67 @@ final class PhoneFitCutout {
 
             View decor = window.getDecorView();
             if (decor != null) {
-                decor.setBackgroundColor(0xFF09090B);
-                // 部分 ROM 会把 inset 写进 decor 的 padding，清掉它窗口才真的铺到顶。
+                // 底色不在这里写死：浅色主题下那条带子要跟界面同色，由 JS 经
+                // setWindowSurfaceColor 推过来（FoliaCorePlugin）。这里只保证不额外留白。
                 decor.setPadding(0, 0, 0, 0);
+                // 关掉这一层的 fitsSystemWindows：开着的话系统会按系统栏/挖孔高度给它垫 padding，
+                // 那就是顶部那条「刘海高」的空带。
+                decor.setFitsSystemWindows(false);
             }
             applyEdgeToEdge(decor, window);
+            scheduleCutoutModeFallback(activity, window);
             return true;
         } catch (Throwable error) {
             Log.w(TAG, "apply cutout mode failed", error);
             return false;
         }
+    }
+
+    /**
+     * 有的 ROM 不认 API 30 的 ALWAYS（或者把它当成 DEFAULT 处理），窗口照样被挡在挖孔下面，
+     * 顶部就空出一条刘海高的带子。这里量一次：窗口比屏幕矮、而且屏幕上确实有挖孔，说明真的被
+     * letterbox 了，退回该 ROM 更常支持的 SHORT_EDGES 再要一次。
+     *
+     * 分屏/小窗里窗口本来就比屏幕小，那种情况不动（挖孔区由系统自己裁）。
+     */
+    private static void scheduleCutoutModeFallback(final Activity activity, final Window window) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return;
+        }
+        final View decor = window.getDecorView();
+        if (decor == null) {
+            return;
+        }
+        decor.post(() -> {
+            try {
+                if (activity.isFinishing() || activity.isInMultiWindowMode()) {
+                    return;
+                }
+                WindowInsets insets = decor.getRootWindowInsets();
+                DisplayCutout cutout = insets == null ? null : insets.getDisplayCutout();
+                if (cutout == null) {
+                    return;
+                }
+                int screenHeight = decor.getResources().getDisplayMetrics().heightPixels;
+                int windowHeight = decor.getHeight();
+                // 容差取 8px：状态栏/导航栏都被隐藏时两者应当相等，差出一条刘海就已经被压矮了。
+                if (windowHeight <= 0 || windowHeight + 8 >= screenHeight) {
+                    return;
+                }
+                WindowManager.LayoutParams attributes = window.getAttributes();
+                if (attributes.layoutInDisplayCutoutMode
+                    == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
+                    return;
+                }
+                attributes.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                window.setAttributes(attributes);
+                Log.i(TAG, "cutout ALWAYS ignored by this ROM, fell back to SHORT_EDGES"
+                    + " (window " + windowHeight + "px of screen " + screenHeight + "px)");
+            } catch (Throwable error) {
+                Log.w(TAG, "cutout fallback check failed", error);
+            }
+        });
     }
 
     /**
@@ -136,10 +187,12 @@ final class PhoneFitCutout {
             // 清掉容器链上的 inset padding：黑边就是它垫出来的。
             clearInsetPadding(view, 3);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // 返回消费掉 systemBars 的 inset，避免系统再垫回来。
+                // 返回消费掉系统栏与刘海（displayCutout）的 inset，避免系统再垫回来。
+                // 只清 systemBars 不够：部分 ROM 把挖孔本身的高度当成 displayCutout inset 垫上来，
+                // 顶部就正好空出一条「刘海高」的带子——那正是这块要消掉的东西。输入法 inset 不动。
                 return new WindowInsetsCompat.Builder(insets)
                     .setInsets(
-                        WindowInsetsCompat.Type.systemBars(),
+                        WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout(),
                         androidx.core.graphics.Insets.NONE
                     )
                     .build();
@@ -165,6 +218,9 @@ final class PhoneFitCutout {
         }
         if (view instanceof ViewGroup || view instanceof WebView) {
             view.setPadding(0, 0, 0, 0);
+            // 容器自己开着 fitsSystemWindows 时，系统每次布局都会按 inset 重新垫 padding，
+            // 事后再清只是追赶。关掉它，从源头不再垫。
+            view.setFitsSystemWindows(false);
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -217,7 +273,7 @@ final class PhoneFitCutout {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 return new WindowInsetsCompat.Builder(insets)
                     .setInsets(
-                        WindowInsetsCompat.Type.systemBars(),
+                        WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout(),
                         androidx.core.graphics.Insets.NONE
                     )
                     .build();

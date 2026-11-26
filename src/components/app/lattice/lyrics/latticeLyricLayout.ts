@@ -3,6 +3,7 @@ import { buildMonetDisplayTokens, splitMonetGraphemes, type MonetDisplayToken } 
 import { resolveThemeFontStack, resolveThemeTranslationFontStack, resolveThemeFontWeight } from '../../../../utils/fontStacks';
 import type { LatticeLyricInput } from './types';
 import { resolveMonetFillWidth } from '../../../visualizer/monet/monetLyricMotion';
+import { resolveLyricTextDirection } from '../../../../utils/lyrics/textDirection';
 
 // src/components/app/lattice/lyrics/latticeLyricLayout.ts
 export type MeasureText = (text: string, font: string) => { width: number; height: number };
@@ -16,14 +17,21 @@ export function resolveLatticeTypography(input: LatticeLyricInput, width: number
     const weight = resolveThemeFontWeight(input.theme, 600);
     const translationWeight = resolveThemeFontWeight(input.subtitleTheme ?? input.theme, 500);
     const showTranslation = showsLatticeTranslation(input);
-    let fontPx = 24;
-    for (let size = 64; size >= 24; size--) {
+    const fits = (size: number) => {
         const main = measure('国Agyp', `${weight} ${size}px ${family}`);
         const sub = measure('国Agyp', `${translationWeight} ${size * 0.5}px ${translationFamily}`);
         const lineHeight = Math.max(size * 1.18, main.height + 2);
         const budget = lineHeight * (3 + 2 * 0.72) + size * 0.49 * 2 + size * 1.2
             + (showTranslation ? Math.max(size * 0.5 * 1.35, sub.height + 2) * 2 + size * 0.3 : 0);
-        if (budget <= height && main.width * 3 <= Math.max(0, width - size * 1.2)) { fontPx = size; break; }
+        return budget <= height && main.width * 3 <= Math.max(0, width - size * 1.2);
+    };
+    // The largest of 24–64 that fits, by bisection: a bigger size only ever needs more room, and every probe
+    // is two canvas measurements of a font the cache has not seen, which a 41-step walk paid up to 82 times
+    // (on every mount, and again on every resize). Nothing fits: 24.
+    let fontPx = 24;
+    for (let low = 24, high = 64; low <= high;) {
+        const size = (low + high) >> 1;
+        if (fits(size)) { fontPx = size; low = size + 1; } else high = size - 1;
     }
     const font = `${weight} ${fontPx}px ${family}`;
     const translationPx = fontPx * 0.5;
@@ -37,11 +45,16 @@ export type LatticeTypography = ReturnType<typeof resolveLatticeTypography>;
 export interface LyricPiece {
     text: string; x: number; y: number; width: number; row: number;
     token: MonetDisplayToken; offsets: number[]; tokenOffset: number; translation: boolean;
+    /** Right-to-left text: the piece is placed from the right edge and its sweep runs leftward. */
+    rtl: boolean;
 }
 
-/** Wraps at token boundaries; oversized tokens split only at grapheme boundaries, preserving their clock offsets. */
+/**
+ * Wraps at token boundaries; oversized tokens split only at grapheme boundaries, preserving their clock offsets.
+ * RTL text fills each row from the right edge, so its first token sits rightmost.
+ */
 export function wrapLatticeTokens(tokens: MonetDisplayToken[], width: number, font: string,
-    lineHeight: number, measure: MeasureText, translation = false): LyricPiece[] {
+    lineHeight: number, measure: MeasureText, translation = false, rtl = false): LyricPiece[] {
     const pieces: LyricPiece[] = [];
     let x = 0, row = 0;
     for (const token of tokens) {
@@ -58,8 +71,8 @@ export function wrapLatticeTokens(tokens: MonetDisplayToken[], width: number, fo
                 && measure(glyphs.slice(first, last + 1).join(''), font).width + x <= width) last++;
             const text = glyphs.slice(first, last).join('');
             const pieceWidth = measure(text, font).width;
-            pieces.push({ text, x, y: row * lineHeight, width: pieceWidth, row, token, offsets,
-                tokenOffset: offsets[first], translation });
+            pieces.push({ text, x: rtl ? width - x - pieceWidth : x, y: row * lineHeight, width: pieceWidth, row, token, offsets,
+                tokenOffset: offsets[first], translation, rtl });
             x += pieceWidth;
             first = last;
             if (first < glyphs.length && glyphs[first] !== '\n') { row++; x = 0; }
@@ -71,16 +84,30 @@ export function wrapLatticeTokens(tokens: MonetDisplayToken[], width: number, fo
 export function layoutLatticeLine(line: Line, type: LatticeTypography, width: number, measure: MeasureText,
     romanization: boolean) {
     const tokens = buildMonetDisplayTokens(line);
-    const pieces = wrapLatticeTokens(tokens, width, type.font, type.lineHeight, measure);
+    const rtl = resolveLyricTextDirection(line.fullText) === 'rtl';
+    const pieces = wrapLatticeTokens(tokens, width, type.font, type.lineHeight, measure, false, rtl);
     const rows = (pieces.at(-1)?.row ?? 0) + 1;
     const translation = type.showTranslation ? (romanization ? line.romanization : line.translation) : '';
     const subToken: MonetDisplayToken = { text: translation ?? '', timed: false, startTime: null, endTime: null,
         key: 'translation', startOffset: 0, endOffset: translation?.length ?? 0, graphemeTimings: [] };
-    const sub = translation ? wrapLatticeTokens([subToken], width, type.translationFont, type.translationLineHeight, measure, true)
+    const sub = translation ? wrapLatticeTokens([subToken], width, type.translationFont, type.translationLineHeight, measure, true,
+        resolveLyricTextDirection(translation) === 'rtl')
         .filter(piece => piece.row < 2) : [];
     const textHeight = rows * type.lineHeight;
     for (const piece of sub) piece.y += textHeight + type.fontPx * 0.3;
-    return { pieces: [...pieces, ...sub], rows, textHeight,
+    // A translation of the other direction keeps its own reading order but sits flush on the lyric's side.
+    const rowStarts = new Map<number, number>(), rowEnds = new Map<number, number>();
+    for (const piece of sub) {
+        if (piece.rtl === rtl) continue;
+        rowStarts.set(piece.row, Math.min(rowStarts.get(piece.row) ?? Infinity, piece.x));
+        rowEnds.set(piece.row, Math.max(rowEnds.get(piece.row) ?? 0, piece.x + piece.width));
+    }
+    for (const piece of sub) {
+        if (piece.rtl === rtl) continue;
+        piece.x += rtl ? width - (rowEnds.get(piece.row) ?? width) : -(rowStarts.get(piece.row) ?? 0);
+    }
+    // `width`/`rtl` let the runtime scale an RTL line about its right edge, where its rows are flush.
+    return { pieces: [...pieces, ...sub], rows, textHeight, width, rtl,
         height: textHeight + (sub.length ? type.fontPx * 0.3 + ((sub.at(-1)?.row ?? 0) + 1) * type.translationLineHeight : 0) };
 }
 export type LatticeLineLayout = ReturnType<typeof layoutLatticeLine>;

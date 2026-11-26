@@ -59,6 +59,8 @@ export const BEAT_EFFECT_IDS = {
     machiDrumRipple: 'machi.drumRipple',
     machiScreenFlash: 'machi.screenFlash',
     nebbiaDrizzleRide: 'nebbia.drizzleRide',
+    nebbiaAquaBeat: 'nebbia.aquaBeat',
+    metaphorAnnihilation: 'metaphor.annihilation',
 } as const;
 
 /**

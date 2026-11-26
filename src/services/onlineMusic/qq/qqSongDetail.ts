@@ -27,3 +27,14 @@ export const requestQqSongDetail = (songmid: string): Promise<UnifiedSong | null
     qqSongDetailRequests.set(songmid, request);
     return request;
 };
+
+// 一次批量查几首：与上游 0.7.27 保持一致，调用方（omni 的 songDetailsPerRequest）按这个数分组。
+export const QQ_SONG_DETAILS_PER_REQUEST = 25;
+
+// 按 id 查一首（播放侧 getSongDetail）：数字 songid 交给原生 /song_info 的 song_id 分支，
+// 其余按 songmid 走，见 src/audioNative/qq.ts 的 /song_info。
+export const getQqSongDetailById = async (id: MediaId): Promise<UnifiedSong | null> => getQqSongDetail(id);
+
+// 按 id 批量查（播放侧 getSongDetails）：后端没有批量接口，逐首并发查，按入参顺序交回。
+export const getQqSongDetails = async (ids: MediaId[]): Promise<(UnifiedSong | null)[]> =>
+    Promise.all(ids.map((id) => getQqSongDetail(id)));

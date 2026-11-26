@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, FoldedGroup, Reveal, Row, Select, TextField, option, type SettingsGroupDef } from '../kit';
+import { Button, FoldedGroup, Reveal, Row, Select, TextField, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
 import { AI_PROVIDER_PRESETS, resolveAiConnection } from '../../../../../shared/ai/providerRegistry.mjs';
 import { canListAiModels, fetchAiModels } from '../../../../services/aiText';
 import { generateThemeNative } from '../../../../services/aiAndroid/client';
@@ -13,15 +13,27 @@ import { readStoredAiModel, useAiSettingsStore } from '../../../../stores/useAiS
 // 安卓没有主进程，请求由 WebView 直连服务商，Key 落在本机 localStorage（不加密，界面上要讲清楚）。
 // 提示词与 JSON Schema 与桌面版共用 shared/themePrompt.mjs，两条路径生成的主题一致。
 
-const AI_ANDROID: SettingsGroupDef = { id: 'androidAiSettings', titleKey: 'options.androidAiSettings' };
+const isDesktopRuntime = () => typeof window !== 'undefined' && Boolean(window.electron);
+
+const AI_ANDROID: SettingsGroupDef = {
+    id: 'androidAiSettings',
+    titleKey: 'options.androidAiSettings',
+    // 这一组只在手机/网页构建里出现：桌面版用的是上面的主进程加密存储那套。
+    available: () => !isDesktopRuntime(),
+};
+
+const androidOnly = { available: () => !isDesktopRuntime() } as const;
 
 const O = {
-    provider: option(AI_ANDROID, 'androidAiProvider', 'options.aiProvider'),
-    preset: option(AI_ANDROID, 'androidAiPreset', 'options.aiProviderPreset'),
-    apiUrl: option(AI_ANDROID, 'androidAiApiUrl', 'options.openaiApiUrl'),
-    apiKey: option(AI_ANDROID, 'androidAiApiKey', 'options.aiApiKey'),
-    model: option(AI_ANDROID, 'androidAiModel', 'options.aiModel'),
+    provider: option(AI_ANDROID, 'androidAiProvider', 'options.aiProvider', androidOnly),
+    preset: option(AI_ANDROID, 'androidAiPreset', 'options.aiProviderPreset', androidOnly),
+    apiUrl: option(AI_ANDROID, 'androidAiApiUrl', 'options.openaiApiUrl', androidOnly),
+    apiKey: option(AI_ANDROID, 'androidAiApiKey', 'options.aiApiKey', androidOnly),
+    model: option(AI_ANDROID, 'androidAiModel', 'options.aiModel', androidOnly),
 };
+
+/** 供设置搜索登记：与 AppearancePage 的 OPTIONS 合在一起。 */
+export const ANDROID_AI_SETTINGS_OPTIONS: SettingsOptionDef[] = Object.values(O);
 
 type TestState = { status: 'idle' | 'running' | 'ok' | 'fail'; message: string };
 type ModelEntry = { id: string; name: string };

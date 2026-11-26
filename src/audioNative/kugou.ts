@@ -447,7 +447,8 @@ export const handleKugouEndpoint = async (endpoint: string): Promise<SimpleRespo
         });
         const body = answer.body ?? {};
         const data = body.data ?? {};
-        const playUrl = data.play_url || data.play_backup_url || data.playUrl || data.url || '';
+        // 页面在 https://localhost 下：酷狗回的播放地址常是 http，CDN 支持 https，统一升级。
+        const playUrl = String(data.play_url || data.play_backup_url || data.playUrl || data.url || '').replace(/^http:/i, 'https:');
         return ok({
           status: 1, error_code: 0,
           data: [{
@@ -635,17 +636,20 @@ export const handleKugouEndpoint = async (endpoint: string): Promise<SimpleRespo
         return ok(answer.body);
       }
       case '/everyday_recommend': {
-        const answer = await signedCall(`${GATEWAY}/everyday_song_recommend`, { platform: 'ios' }, session, {
-          method: 'POST', bodyObj: {}, xRouter: 'everydayrec.service.kugou.com',
-        });
+        // 每日推荐的标准协议把服务前缀写在路径里（`everydayrec.service/v3/...`），且不带正文：
+        // 旧写法（`/everyday_song_recommend` + x-router、空 JSON 正文）上游只回 20010/200103、没有歌，
+        // 页面因此是空的（封面也随第一首歌一起没有）。
+        const answer = await signedCall(`${GATEWAY}/everydayrec.service/v3/everyday_song_recommend`, {
+          platform: params.platform || 'ios',
+        }, session);
         return ok(answer.body);
       }
       case '/everyday_history': {
-        const answer = await signedCall(`${GATEWAY}/everyday/api/v1/get_history`, {
-          mode: params.mode ?? 'list', platform: 'ios',
+        const answer = await signedCall(`${GATEWAY}/everydayrec.service/everyday/api/v1/get_history`, {
+          mode: params.mode ?? 'list', platform: params.platform || 'ios',
           ...(params.history_name ? { history_name: params.history_name } : {}),
           ...(params.date ? { date: params.date } : {}),
-        }, session, { method: 'POST', bodyObj: {}, xRouter: 'everydayrec.service.kugou.com' });
+        }, session);
         return ok(answer.body);
       }
       case '/personal_fm': {

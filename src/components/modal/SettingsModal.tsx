@@ -12,6 +12,7 @@ import { NavidromeConfig, NavidromeServerProfile } from '../../types/navidrome';
 import VisPlayground from '../visualizer/window/VisPlayground';
 import { useVisualizerTunings } from '../visualizer/useVisualizerTunings';
 import ThemePark from './ThemePark';
+import SceneWindow from '../scenes/settings/SceneWindow';
 import LyricFilterSettingsModal from './LyricFilterSettingsModal';
 import type { LyricFilterDraft } from './LyricFilterSettingsModal';
 import GlobalLyricOffsetModal from './settings/GlobalLyricOffsetModal';
@@ -31,6 +32,7 @@ import { type SettingsModalState, type SettingsSubviewId, type VisualizerSetting
 import { SettingsAnchorProvider, useSettingsAnchorList, useSettingsAnchorStore } from './settings/navigation/SettingsAnchorContext';
 import SettingsSearchResults from './settings/navigation/SettingsSearchResults';
 import SettingsSideList from './settings/navigation/SettingsSideList';
+import SettingsCompactNav from './settings/navigation/SettingsCompactNav';
 import { settingsAnchorSubview } from './settings/navigation/settingsAnchorModel';
 import { buildSettingsNavGroups, findSettingsNavItem, type SettingsSectionId } from './settings/navigation/settingsNavModel';
 import { buildSettingsSearchEntries, searchSettings, type SettingsSearchEntry } from './settings/navigation/settingsNavSearch';
@@ -56,6 +58,7 @@ import { selectPlayerChromeSettingsSnapshot, usePlayerChromeSettingsStore } from
 import { selectThemeSettingsSnapshot, useThemeSettingsStore } from '../../stores/useThemeSettingsStore';
 import { selectDesktopSettingsSnapshot, useDesktopSettingsStore } from '../../stores/useDesktopSettingsStore';
 import { useSettingsModalStore } from '../../stores/useSettingsModalStore';
+import { useAiSettingsStore } from '../../stores/useAiSettingsStore';
 import { setNavidromeEnabledState, useLibraryStore } from '../../stores/useLibraryStore';
 
 const DEFAULT_OPENAI_TEMPERATURE = '0.7';
@@ -319,13 +322,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
     const contentScrollRef = useRef<HTMLDivElement>(null);
-    // Matches the md: split of the window: under it the side list is a strip that scrolls sideways.
+    // Matches the md: split of the window: under it the categories go into the drawer the menu
+    // button opens, and only that bar (menu button + search) stays on top.
     const isWideSettingsLayout = useMediaQuery('(min-width: 768px)');
     const settingsAnchorStore = useSettingsAnchorStore();
     const settingsAnchors = useSettingsAnchorList(settingsAnchorStore);
 
     const [showVisPlayground, setShowVisPlayground] = useState(false);
     const [showThemePark, setShowThemePark] = useState(false);
+    const [showSceneWindow, setShowSceneWindow] = useState(false);
     const [showLyricFilterSettings, setShowLyricFilterSettings] = useState(false);
     const [showGlobalLyricOffset, setShowGlobalLyricOffset] = useState(false);
     const [showAiHelpPrompt, setShowAiHelpPrompt] = useState(false);
@@ -338,6 +343,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setActiveTab(initialTab);
         setShowVisPlayground(initialSubview === 'visualizer');
         setShowThemePark(initialSubview === 'themePark');
+        setShowSceneWindow(initialSubview === 'scene');
         setShowLyricFilterSettings(initialSubview === 'lyricFilter');
         setShowGlobalLyricOffset(initialSubview === 'globalLyricOffset');
 
@@ -352,7 +358,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         } else {
             setActiveSettingsSection(prev => prev || 'appearance');
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialSubview, initialTab]);
 
     // A request for one place in the settings: show the page settingsAnchorModel puts it on, then
@@ -369,7 +374,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setSearchQuery('');
         // A request may name one row of the section; the section is where it lands while that row is not drawn.
         landOn(initialAnchor.rowId ?? initialAnchor.id, initialAnchor.id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialAnchor]);
 
     // Cache State
@@ -422,11 +426,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [cacheDirectoryIsDefault, setCacheDirectoryIsDefault] = useState(true);
     const [cacheDirectoryStatus, setCacheDirectoryStatus] = useState<'idle' | 'choosing'>('idle');
     const isElectronRuntime = typeof window !== 'undefined' && Boolean(window.electron);
+    // 安卓没有主进程：Key 存在本机（useAiSettingsStore），要按它判断是否已配置；
+    // 网页版由部署方的路由带着自己的 Key，仍然视为已配置。
+    const isAndroidRuntime = typeof window !== 'undefined'
+        && (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.() === 'android';
+    const androidAiKey = useAiSettingsStore(state => (state.provider === 'openai' ? state.openaiKey : state.geminiKey));
     const savedAiApiKey = savedElectronAiCredentials.AI_PROVIDER === 'openai'
         ? savedElectronAiCredentials.OPENAI_API_KEY
         : savedElectronAiCredentials.GEMINI_API_KEY;
     const aiApiKeyStatus: 'loading' | 'configured' | 'missing' = !isElectronRuntime
-        ? 'configured'
+        ? (isAndroidRuntime ? (androidAiKey.trim() ? 'configured' : 'missing') : 'configured')
         : !electronSettingsLoaded
             ? 'loading'
             : savedAiApiKey
@@ -904,6 +913,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     const isAnySubviewOpen = showVisPlayground
         || showThemePark
+        || showSceneWindow
         || showLyricFilterSettings
         || showGlobalLyricOffset
         || showAiHelpPrompt
@@ -913,7 +923,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     // open sheet takes the key on the document and stops it (shared/Sheet.tsx). A menu or a pick
     // list that is open takes the key before this window hears it as well. The two work windows
     // leave Escape to their owner, so they are what it can find open here.
-    const isWorkWindowOpen = showVisPlayground || showThemePark;
+    const isWorkWindowOpen = showVisPlayground || showThemePark || showSceneWindow;
 
     const closeWorkWindows = () => {
         if (shouldCloseModalOnSubviewBack) {
@@ -922,6 +932,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }
         setShowVisPlayground(false);
         setShowThemePark(false);
+        setShowSceneWindow(false);
     };
 
     useEffect(() => {
@@ -1050,6 +1061,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         },
         onOpenVisPlayground: () => setShowVisPlayground(true),
         onOpenThemePark: () => setShowThemePark(true),
+        onOpenSceneWindow: () => setShowSceneWindow(true),
         onToggleTransparentPlayerBackground: resolvedToggleTransparentPlayerBackground,
         viewProps: {
             appearance: {
@@ -1191,18 +1203,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 onClick={(event) => event.stopPropagation()}
             >
                 <SettingsKitThemeContext.Provider value={kitTheme}>
-                    <SettingsSideList
-                        groups={settingsNavGroups}
-                        activeId={isSearching ? null : activeTab === 'help' ? 'help' : activeSettingsSection}
-                        onSelectSection={handleSelectSettingsSection}
-                        onSelectHelp={handleSelectHelp}
-                        query={searchQuery}
-                        onQueryChange={handleSearchQueryChange}
-                        onSubmitQuery={() => {
-                            if (searchHits.length > 0) handleSelectSearchHit(searchHits[0]);
-                        }}
-                        isWide={isWideSettingsLayout}
-                    />
+                    {/* 宽屏：左侧栏（搜索框 + 分类）常在。紧凑档：顶上只有菜单按钮和搜索框，
+                        分类收进菜单按钮打开的抽屉里——抽屉就是同一个侧栏，不带搜索框。 */}
+                    {isWideSettingsLayout ? (
+                        <SettingsSideList
+                            groups={settingsNavGroups}
+                            activeId={isSearching ? null : activeTab === 'help' ? 'help' : activeSettingsSection}
+                            onSelectSection={handleSelectSettingsSection}
+                            onSelectHelp={handleSelectHelp}
+                            query={searchQuery}
+                            onQueryChange={handleSearchQueryChange}
+                            onSubmitQuery={() => {
+                                if (searchHits.length > 0) handleSelectSearchHit(searchHits[0]);
+                            }}
+                        />
+                    ) : (
+                        <SettingsCompactNav
+                            groups={settingsNavGroups}
+                            activeId={isSearching ? null : activeTab === 'help' ? 'help' : activeSettingsSection}
+                            onSelectSection={handleSelectSettingsSection}
+                            onSelectHelp={handleSelectHelp}
+                            query={searchQuery}
+                            onQueryChange={handleSearchQueryChange}
+                            onSubmitQuery={() => {
+                                if (searchHits.length > 0) handleSelectSearchHit(searchHits[0]);
+                            }}
+                            isDaylight={isDaylight}
+                            onClose={onClose}
+                            closeLabel={t('ui.close')}
+                        />
+                    )}
                     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                         <PageHeader
                             title={isSearching
@@ -1216,6 +1246,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 : undefined}
                             closeLabel={t('ui.close')}
                             onClose={onClose}
+                            showClose={isWideSettingsLayout}
                         />
                         <div
                             ref={contentScrollRef}
@@ -1404,6 +1435,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             setShowThemePark(false);
                         }}
                         onClose={() => closeSubviewOrModal(() => setShowThemePark(false))}
+                    />
+                )}
+            </AnimatePresence>
+            <AnimatePresence>
+                {showSceneWindow && (
+                    <SceneWindow
+                        isDaylight={isDaylight}
+                        theme={theme}
+                        onClose={() => closeSubviewOrModal(() => setShowSceneWindow(false))}
                     />
                 )}
             </AnimatePresence>

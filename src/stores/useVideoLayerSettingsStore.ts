@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getStoredBoolean, getStoredString, setStoredBoolean } from './storagePrimitives';
+import { getStoredBoolean, getStoredString, setStoredBoolean, setStoredString } from './storagePrimitives';
 import {
     canPersistVideoLayerFile,
     canStoreVideoLayerFileCopy,
@@ -12,6 +12,8 @@ import {
     readVideoLayerFileHandle,
     saveVideoLayerFileHandle,
 } from '../services/videoLayerFile';
+import { findStoredWallpaper, type WallpaperLibraryEntry } from '../services/onlineWallpaper/library';
+import type { WallpaperKind } from '../services/onlineWallpaper/types';
 
 // src/stores/useVideoLayerSettingsStore.ts
 // The built-in video layer behind the lyrics: a muted video (a picked local file, else a URL) that
@@ -32,6 +34,30 @@ const VIDEO_LAYER_ENABLED_KEY = 'video_layer_enabled';
 const VIDEO_LAYER_URL_KEY = 'video_layer_url';
 const VIDEO_LAYER_OPACITY_KEY = 'video_layer_opacity';
 const VIDEO_LAYER_FIT_KEY = 'video_layer_fit';
+/** 选中的在线壁纸：只记 id/类型/名字，地址按本机端口在启动时重建。 */
+const ONLINE_WALLPAPER_KEY = 'video_layer_online_wallpaper';
+
+type StoredOnlineWallpaper = { id: string; kind: WallpaperKind; name: string };
+
+const readStoredOnlineWallpaper = (): StoredOnlineWallpaper | null => {
+    try {
+        const raw = getStoredString(ONLINE_WALLPAPER_KEY, '');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<StoredOnlineWallpaper>;
+        if (!parsed || typeof parsed.id !== 'string' || !parsed.id) return null;
+        return {
+            id: parsed.id,
+            kind: parsed.kind === 'image' ? 'image' : 'video',
+            name: typeof parsed.name === 'string' ? parsed.name : '',
+        };
+    } catch {
+        return null;
+    }
+};
+
+const persistOnlineWallpaper = (value: StoredOnlineWallpaper | null) => {
+    setStoredString(ONLINE_WALLPAPER_KEY, value ? JSON.stringify(value) : '');
+};
 
 export const clampVideoLayerOpacity = (value: number) => (
     Number.isFinite(value)
@@ -54,10 +80,21 @@ export type VideoLayerSettingsState = {
     localFileStatus: VideoLayerLocalFileStatus;
     /** False where the pick falls back to <input type=file> and is forgotten on restart. */
     canPersistLocalFile: boolean;
+    /** 选中的在线壁纸（下载在应用内），本地视频优先于它。 */
+    onlineWallpaperId: string | null;
+    onlineWallpaperKind: WallpaperKind | null;
+    onlineWallpaperName: string | null;
+    /** 运行时地址：本机回环服务的 /wallpaper/ 路由，重启后按新端口重建。 */
+    onlineWallpaperUrl: string | null;
     setVideoLayerEnabled: (enabled: boolean) => void;
     setVideoLayerUrl: (url: string) => void;
     setVideoLayerOpacity: (opacity: number) => void;
     setVideoLayerFit: (fit: VideoLayerFit) => void;
+    /** 换上一张已下载的在线壁纸；本地视频会被清掉，因为它优先于壁纸。 */
+    applyOnlineWallpaper: (entry: WallpaperLibraryEntry) => Promise<void>;
+    clearOnlineWallpaper: () => void;
+    /** 启动时按存下的 id 找回壁纸地址；文件已经不在时静默清掉记录。 */
+    restoreOnlineWallpaper: () => Promise<void>;
     /** Opens the file picker; resolves to the picked name, or null when cancelled. */
     pickLocalFile: () => Promise<string | null>;
     clearLocalFile: () => Promise<void>;
@@ -140,6 +177,8 @@ export const useVideoLayerSettingsStore = create<VideoLayerSettingsState>((set, 
         }
     };
 
+    const storedOnlineWallpaper = readStoredOnlineWallpaper();
+
     return {
         videoLayerEnabled: getStoredBoolean(VIDEO_LAYER_ENABLED_KEY, false),
         videoLayerUrl: getStoredString(VIDEO_LAYER_URL_KEY, ''),
@@ -150,6 +189,10 @@ export const useVideoLayerSettingsStore = create<VideoLayerSettingsState>((set, 
         localFileStatus: 'none',
         // 句柄（Chromium/Electron）或本地副本（安卓 WebView）任一可行，重启后都能恢复。
         canPersistLocalFile: canPersistVideoLayerFile() || canStoreVideoLayerFileCopy(),
+        onlineWallpaperId: storedOnlineWallpaper?.id ?? null,
+        onlineWallpaperKind: storedOnlineWallpaper?.kind ?? null,
+        onlineWallpaperName: storedOnlineWallpaper?.name ?? null,
+        onlineWallpaperUrl: null,
         setVideoLayerEnabled: (enabled) => {
             set({ videoLayerEnabled: enabled });
             setStoredBoolean(VIDEO_LAYER_ENABLED_KEY, enabled);
@@ -167,6 +210,49 @@ export const useVideoLayerSettingsStore = create<VideoLayerSettingsState>((set, 
         setVideoLayerFit: (fit) => {
             set({ videoLayerFit: fit });
             persistString(VIDEO_LAYER_FIT_KEY, fit);
+        },
+        applyOnlineWallpaper: async (entry) => {
+            // 本地视频优先于壁纸：换上壁纸时必须把它清掉，否则界面上点了没有任何变化。
+            await get().clearLocalFile();
+            persistOnlineWallpaper({ id: entry.id, kind: entry.kind, name: entry.title });
+            set({
+                onlineWallpaperId: entry.id,
+                onlineWallpaperKind: entry.kind,
+                onlineWallpaperName: entry.title,
+                onlineWallpaperUrl: entry.url || null,
+            });
+            get().setVideoLayerEnabled(true);
+        },
+        clearOnlineWallpaper: () => {
+            persistOnlineWallpaper(null);
+            set({
+                onlineWallpaperId: null,
+                onlineWallpaperKind: null,
+                onlineWallpaperName: null,
+                onlineWallpaperUrl: null,
+            });
+        },
+        restoreOnlineWallpaper: async () => {
+            const stored = readStoredOnlineWallpaper();
+            if (!stored) return;
+            const entry = await findStoredWallpaper(stored.id);
+            if (!entry) {
+                // 文件被清掉了（换机、清数据、删掉了下载）：别把一个打不开的地址留在设置里。
+                persistOnlineWallpaper(null);
+                set({
+                    onlineWallpaperId: null,
+                    onlineWallpaperKind: null,
+                    onlineWallpaperName: null,
+                    onlineWallpaperUrl: null,
+                });
+                return;
+            }
+            set({
+                onlineWallpaperId: entry.id,
+                onlineWallpaperKind: entry.kind,
+                onlineWallpaperName: entry.title,
+                onlineWallpaperUrl: entry.url || null,
+            });
         },
         pickLocalFile: async () => {
             const picked = await pickVideoLayerFile();
@@ -216,6 +302,8 @@ export const useVideoLayerSettingsStore = create<VideoLayerSettingsState>((set, 
                 console.warn('[VideoLayer] 存视频副本失败：', error instanceof Error ? error.message : String(error));
             }
             showFile(picked.file);
+            // 本地视频优先：选了它就把在线壁纸的记录清掉，避免恢复时又冒出来。
+            get().clearOnlineWallpaper();
             get().setVideoLayerEnabled(true);
             return picked.file.name;
         },
@@ -238,5 +326,7 @@ export const useVideoLayerSettingsStore = create<VideoLayerSettingsState>((set, 
 export const ensureVideoLayerFileRestored = () => {
     if (restoreStarted) return;
     restoreStarted = true;
-    void useVideoLayerSettingsStore.getState().restoreLocalFile();
+    const state = useVideoLayerSettingsStore.getState();
+    void state.restoreLocalFile();
+    void state.restoreOnlineWallpaper();
 };

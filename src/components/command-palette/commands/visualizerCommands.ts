@@ -1,4 +1,5 @@
 import { defineCommand } from '../commandFactories';
+import { openPerfCheck } from '../../perfCheck/openPerfCheck';
 import { backgroundPickerSurface, visualizerPickerSurface } from '../surfaces/pickerSurface';
 import { Camera, LayoutGrid, Wallpaper } from 'lucide-react';
 import type { CommandPaletteCommand } from '../types';
@@ -68,6 +69,7 @@ export const visualizerCommands: CommandPaletteCommand[] = [
         description: 'Browse lyric animation modes and click one to switch',
         keywords: ['visualizer picker', 'pick visualizer', 'browse visualizers', '可视化选择器', '选择可视化', '歌词动画选择'],
         icon: LayoutGrid,
+        capsuleAction: true,
         requiresInput: true,
         surface: visualizerPickerSurface,
         placeholder: context => context.shared.t('commandPalette.pickerFilterPlaceholder', 'Type to filter, then click or press Enter'),
@@ -111,6 +113,37 @@ export const visualizerCommands: CommandPaletteCommand[] = [
             return true;
         },
     }),
+    // 雾笺的窗外和前面的玻璃：只在正在画雾笺时有，换完在状态栏报一声换成了哪个
+    defineCommand({
+        id: 'visualizer-nebbia-behind-cycle',
+        group: 'visualizer',
+        title: 'Nebbia: Switch window scene',
+        description: "Switch what is outside Nebbia's window: night street, Dream Sea Glow or the background; the front glass stays as it is",
+        keywords: ['nebbia scene', 'window scene', 'outside the window', 'aquarium', 'night street', 'dream sea glow', '雾笺', '窗外', '切换窗外', '背景样式', '梦海流萤', '雨夜街景', '水族箱'],
+        icon: Wallpaper,
+        isAvailable: context => (context ? context.visualizer.visualizerMode === 'nebbia' : false),
+        execute: (_input, context) => {
+            const { t } = context.shared;
+            const behind = context.visualizer.cycleNebbiaBehind();
+            context.shared.setStatusMsg({ type: 'success', text: `${t('options.nebbiaBehind', 'Outside the window')}: ${t(`options.nebbiaBehind_${behind}`, behind)}` });
+            return true;
+        },
+    }),
+    defineCommand({
+        id: 'visualizer-nebbia-glass-cycle',
+        group: 'visualizer',
+        title: 'Nebbia: Switch front glass',
+        description: "Switch the glass in front of Nebbia's window between rain and dew",
+        keywords: ['nebbia glass', 'front glass', 'glass style', 'rain glass', 'dew', 'condensation', '雾笺', '玻璃', '切换玻璃', '玻璃样式', '雨窗', '凝露'],
+        icon: Wallpaper,
+        isAvailable: context => (context ? context.visualizer.visualizerMode === 'nebbia' : false),
+        execute: (_input, context) => {
+            const { t } = context.shared;
+            const glass = context.visualizer.cycleNebbiaGlass();
+            context.shared.setStatusMsg({ type: 'success', text: `${t('options.nebbiaGlass', 'Front glass')}: ${t(`options.nebbiaGlass_${glass}`, glass)}` });
+            return true;
+        },
+    }),
     createToggleCommand('video-layer-toggle', 'visualizer', 'Video layer behind lyrics', 'Show or hide the muted video layer behind the lyrics', ['video layer', 'background video', 'video behind lyrics', '视频层', '背景视频', '歌词后方视频'], context => context.visualizer.toggleVideoLayer()),
     defineCommand({
         id: 'video-layer-pick',
@@ -133,6 +166,15 @@ export const visualizerCommands: CommandPaletteCommand[] = [
         ['lyric freeze', 'freeze fix', 'linux', 'glow', 'fd leak', 'stepped glow', '歌词卡死', '动画卡死', '画面定格', '发光半径分档', '发光', 'faguangbanjing', 'fgbj'],
         context => context.visualizer.toggleGlowBlurQuantize(),
     ),
+    defineCommand({
+        id: 'perf-check-run',
+        group: 'visualizer',
+        title: 'Run the performance check',
+        description: 'Measure the frame rate of a lyric style with the analysis running, and try the frame-rate cap, canvas resolution and anti-aliasing',
+        keywords: ['performance check', 'benchmark', 'fps', 'frame rate', 'lag', 'stutter', '性能检测', '跑分', '帧率', '卡顿', '测试性能'],
+        platform: ['electron'],
+        execute: () => openPerfCheck(),
+    }),
     createToggleCommand('visualizer-toggle-random-per-song', 'visualizer', 'Random visualizer for every song', 'Toggle a random lyric animation mode whenever the song changes', ['random visualizer', 'random animation', 'per song', '随机歌词动画', '每首歌随机动画'], context => context.visualizer.toggleRandomVisualizerModePerSong()),
     {
         id: 'background-monet-full-overlay',

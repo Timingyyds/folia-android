@@ -61,6 +61,8 @@ export type SettingsPageContextValue = {
     onOpenVisPlayground: () => void;
     /** Opens the theme colour editor over the dialog. */
     onOpenThemePark: () => void;
+    /** Opens the scene window over the dialog. */
+    onOpenSceneWindow: () => void;
     onToggleTransparentPlayerBackground: (enabled: boolean) => void;
     /**
      * State the dialog itself holds (the desktop app's settings file, the Navidrome form, cache

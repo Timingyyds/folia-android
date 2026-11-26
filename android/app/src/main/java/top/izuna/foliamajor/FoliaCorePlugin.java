@@ -4,10 +4,12 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.os.Build;
+import android.os.Environment;
 import android.os.PowerManager;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
@@ -89,6 +91,8 @@ public class FoliaCorePlugin extends Plugin {
         .build();
     private LocalAudioServer localAudioServer;
     private boolean isAudioPickerOpen = false;
+    /** 文件夹选择后逐项查询为空、需要补问音频权限时，暂存这一批要扫的目录文档 id。 */
+    private String pendingFolderDocumentId = null;
 
     @Override
     public void load() {
@@ -907,6 +911,279 @@ public class FoliaCorePlugin extends Plugin {
         startActivityForResult(call, intent, "handlePickedAudioFolder");
     }
 
+    // ---- 在线壁纸 ----------------------------------------------------------------
+
+    private static final String WALLPAPER_USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 10; Pixel) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+    /** 单张壁纸的上限：4K 视频壁纸一般 20–60 MB，这个数只防跑飞。 */
+    private static final long WALLPAPER_MAX_BYTES = 200L * 1024 * 1024;
+
+    /**
+     * 把一张在线壁纸下载进应用私有目录，返回文件名与本机回环地址。
+     *
+     * 为什么不在 WebView 里下：视频壁纸动辄 50 MB，走插件桥的 base64 往返要在渲染进程里
+     * 同时留下原文、base64 和解码后的三份拷贝，低内存设备必炸。这里流式落盘，WebView 只拿 URL。
+     */
+    @PluginMethod
+    public void downloadWallpaper(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url == null || url.isEmpty()) {
+            call.reject("Missing wallpaper url");
+            return;
+        }
+        String referer = call.getString("referer", "");
+        String id = call.getString("id", "");
+        String kind = call.getString("kind", "video");
+        String thumbUrl = call.getString("thumbUrl", "");
+        String thumbReferer = call.getString("thumbReferer", referer);
+        // 列表项的 id（moewalls:slug 这种）：进度事件按它回传，前端才知道是哪一张。
+        String itemId = call.getString("itemId", id);
+        new Thread(() -> {
+            try {
+                if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
+                int port = localAudioServer.start();
+                File directory = localAudioServer.wallpaperDirectory();
+                String baseName = sanitizeWallpaperId(id);
+
+                File target = downloadWallpaperTo(directory, baseName, url, referer, kind, itemId);
+                File thumb = null;
+                if ("video".equals(kind) && thumbUrl != null && !thumbUrl.isEmpty()) {
+                    try {
+                        thumb = downloadWallpaperTo(directory, baseName + "-thumb", thumbUrl, thumbReferer, "image", null);
+                    } catch (Exception thumbError) {
+                        // 封面失败不影响壁纸本身，界面用占位图标顶上。
+                        android.util.Log.w("FoliaCore", "wallpaper thumb failed: " + thumbError.getMessage());
+                    }
+                }
+                emitWallpaperProgress(itemId, 100);
+
+                JSObject result = new JSObject();
+                result.put("file", target.getName());
+                if (thumb != null) result.put("thumbFile", thumb.getName());
+                result.put("mime", LocalAudioServer.guessWallpaperMime(target.getName()));
+                result.put("size", target.length());
+                result.put("url", "http://127.0.0.1:" + port + "/wallpaper/" + Uri.encode(target.getName()));
+                if (thumb != null) {
+                    result.put("thumbUrl", "http://127.0.0.1:" + port + "/wallpaper/" + Uri.encode(thumb.getName()));
+                }
+                call.resolve(result);
+            } catch (Exception error) {
+                String message = error.getMessage() == null ? error.toString() : error.getMessage();
+                call.reject(message, error);
+            }
+        }).start();
+    }
+
+    /** 向 Web 层报一次下载进度（0–100）。itemId 为空时（比如封面）不报。 */
+    private void emitWallpaperProgress(String itemId, int progress) {
+        if (itemId == null || itemId.isEmpty()) return;
+        JSObject payload = new JSObject();
+        payload.put("itemId", itemId);
+        payload.put("progress", Math.max(0, Math.min(100, progress)));
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(() -> notifyListeners("wallpaperProgress", payload));
+        } else {
+            notifyListeners("wallpaperProgress", payload);
+        }
+    }
+
+    /** 已下载的壁纸文件（含封面），供「已下载」列表重建地址。 */
+    @PluginMethod
+    public void listWallpapers(PluginCall call) {
+        new Thread(() -> {
+            try {
+                if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
+                int port = localAudioServer.start();
+                File directory = localAudioServer.wallpaperDirectory();
+                File[] files = directory.listFiles();
+                JSArray items = new JSArray();
+                if (files != null) {
+                    for (File file : files) {
+                        String name = file.getName();
+                        if (!file.isFile() || name.endsWith(".part") || name.contains("-thumb.")) continue;
+                        String base = name.contains(".") ? name.substring(0, name.lastIndexOf('.')) : name;
+                        String thumbName = null;
+                        for (File sibling : files) {
+                            if (sibling.getName().startsWith(base + "-thumb.")) {
+                                thumbName = sibling.getName();
+                                break;
+                            }
+                        }
+                        JSObject item = new JSObject();
+                        item.put("file", name);
+                        if (thumbName != null) item.put("thumbFile", thumbName);
+                        item.put("mime", LocalAudioServer.guessWallpaperMime(name));
+                        item.put("size", file.length());
+                        items.put(item);
+                    }
+                }
+                JSObject result = new JSObject();
+                result.put("items", items);
+                result.put("port", port);
+                call.resolve(result);
+            } catch (Exception error) {
+                String message = error.getMessage() == null ? error.toString() : error.getMessage();
+                call.reject(message, error);
+            }
+        }).start();
+    }
+
+    /** 删除已下载的壁纸文件（索引由渲染进程自己维护）。 */
+    @PluginMethod
+    public void deleteWallpaper(PluginCall call) {
+        JSArray names = call.getArray("files");
+        new Thread(() -> {
+            try {
+                if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
+                File directory = localAudioServer.wallpaperDirectory();
+                JSArray deleted = new JSArray();
+                JSArray failed = new JSArray();
+                if (names != null) {
+                    for (int index = 0; index < names.length(); index += 1) {
+                        String name = names.optString(index, null);
+                        if (name == null || name.isEmpty() || name.contains("/")
+                            || name.contains("\\") || name.contains("..")) {
+                            failed.put(String.valueOf(name));
+                            continue;
+                        }
+                        File target = new File(directory, name);
+                        if (!target.isFile() || target.delete()) deleted.put(name);
+                        else failed.put(name);
+                    }
+                }
+                JSObject result = new JSObject();
+                result.put("deleted", deleted);
+                result.put("failed", failed);
+                call.resolve(result);
+            } catch (Exception error) {
+                String message = error.getMessage() == null ? error.toString() : error.getMessage();
+                call.reject(message, error);
+            }
+        }).start();
+    }
+
+    private File downloadWallpaperTo(
+        File directory,
+        String baseName,
+        String url,
+        String referer,
+        String kind,
+        String progressItemId
+    ) throws IOException {
+        Request.Builder request = new Request.Builder()
+            .url(url)
+            .header("User-Agent", WALLPAPER_USER_AGENT)
+            .header("Accept", "*/*")
+            .header("Accept-Encoding", "identity");
+        if (referer != null && !referer.isEmpty()) request.header("Referer", referer);
+        Response response = client.newCall(request.build()).execute();
+        try {
+            ResponseBody body = response.body();
+            if (!response.isSuccessful() || body == null) throw new IOException("HTTP " + response.code());
+            String contentType = body.contentType() == null ? "" : body.contentType().toString();
+            if (contentType.contains("text/html")) throw new IOException("下载返回了网页而不是壁纸文件");
+            String extension = wallpaperExtension(contentType, url, kind);
+            File target = new File(directory, baseName + "." + extension);
+            File part = new File(target.getPath() + ".part");
+            long contentLength = body.contentLength();
+            long total = 0;
+            int lastPercent = -1;
+            long lastTick = 0;
+            try (InputStream source = body.byteStream();
+                 OutputStream sink = new java.io.BufferedOutputStream(new FileOutputStream(part))) {
+                byte[] buffer = new byte[128 * 1024];
+                int read;
+                while ((read = source.read(buffer)) != -1) {
+                    sink.write(buffer, 0, read);
+                    total += read;
+                    if (total > WALLPAPER_MAX_BYTES) throw new IOException("壁纸文件过大");
+                    if (progressItemId != null) {
+                        // 知道总长就报百分比；不知道（chunked）就按已下载量缓慢推进，上限 95。
+                        int percent = contentLength > 0
+                            ? (int) Math.min(99, total * 100 / contentLength)
+                            : Math.min(95, 1 + (int) (total / (512 * 1024)));
+                        long now = System.currentTimeMillis();
+                        if (percent > lastPercent && (percent - lastPercent >= 2 || now - lastTick >= 400)) {
+                            lastPercent = percent;
+                            lastTick = now;
+                            emitWallpaperProgress(progressItemId, percent);
+                        }
+                    }
+                }
+            }
+            if (total <= 0) {
+                part.delete();
+                throw new IOException("下载内容为空");
+            }
+            if (!part.renameTo(target)) {
+                part.delete();
+                throw new IOException("无法保存壁纸文件");
+            }
+            android.util.Log.i("FoliaCore", "wallpaper saved: " + target.getName() + " " + total + " bytes " + contentType);
+            return target;
+        } finally {
+            response.close();
+        }
+    }
+
+    /** 文件名只留安全字符：它同时是磁盘文件名和回环 URL 的一段。 */
+    private static String sanitizeWallpaperId(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        StringBuilder out = new StringBuilder();
+        for (int index = 0; index < value.length() && out.length() < 80; index += 1) {
+            char character = value.charAt(index);
+            boolean safe = (character >= 'a' && character <= 'z')
+                || (character >= 'A' && character <= 'Z')
+                || (character >= '0' && character <= '9')
+                || character == '-' || character == '_' || character == '.';
+            out.append(safe ? character : '-');
+        }
+        return out.length() == 0 ? "wp-" + System.currentTimeMillis() : out.toString();
+    }
+
+    /** 扩展名优先按 Content-Type 判，其次是 URL，最后按壁纸类型给默认值。 */
+    private static String wallpaperExtension(String contentType, String url, String kind) {
+        String lower = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (lower.contains("video/webm")) return "webm";
+        if (lower.contains("video/quicktime")) return "mov";
+        if (lower.contains("video/mp4")) return "mp4";
+        if (lower.contains("image/png")) return "png";
+        if (lower.contains("image/webp")) return "webp";
+        if (lower.contains("image/gif")) return "gif";
+        if (lower.contains("image/jpeg") || lower.contains("image/jpg")) return "jpg";
+        String path = url == null ? "" : url.replaceAll("[?#].*$", "").toLowerCase(Locale.ROOT);
+        String[] known = { "webm", "mp4", "mov", "png", "webp", "gif", "jpg", "jpeg" };
+        for (String extension : known) {
+            if (path.endsWith("." + extension)) return "jpeg".equals(extension) ? "jpg" : extension;
+        }
+        return "image".equals(kind) ? "jpg" : "mp4";
+    }
+
+    /**
+     * 安装包的版本号（build.gradle 的 versionName / versionCode）。
+     *
+     * 更新检查必须比对**这个**，不能比对构建时写进 JS 的 package.json 版本：
+     * 两边一旦不同步，就会永远提示「有新版本」，而装上的其实就是最新版。
+     */
+    @PluginMethod
+    public void appVersion(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            android.content.pm.PackageInfo info = getContext().getPackageManager()
+                .getPackageInfo(getContext().getPackageName(), 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? info.getLongVersionCode()
+                : info.versionCode;
+            result.put("versionName", info.versionName == null ? "" : info.versionName);
+            result.put("versionCode", versionCode);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+            return;
+        }
+        call.resolve(result);
+    }
+
     /** 供 WebView 重建导入音频的流地址（端口每次启动都可能不同）。 */
     @PluginMethod
     public void localAudioServerPort(PluginCall call) {
@@ -930,9 +1207,21 @@ public class FoliaCorePlugin extends Plugin {
             call.reject("Missing remote audio url");
             return;
         }
+        // 可选：转发时附带的请求头（飞牛的 Cookie: music-token）与「允许任意主机」（自建服务的局域网地址）。
+        Map<String, String> headers = new HashMap<>();
+        JSObject rawHeaders = call.getObject("headers");
+        if (rawHeaders != null) {
+            Iterator<String> names = rawHeaders.keys();
+            while (names.hasNext()) {
+                String name = names.next();
+                Object value = rawHeaders.opt(name);
+                if (name != null && value != null) headers.put(name, String.valueOf(value));
+            }
+        }
+        Boolean allowAnyHost = call.getBoolean("allowAnyHost", false);
         try {
             if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
-            String localUrl = localAudioServer.registerRemoteAudio(url);
+            String localUrl = localAudioServer.registerRemoteAudio(url, headers, Boolean.TRUE.equals(allowAnyHost));
             JSObject result = new JSObject();
             result.put("url", localUrl);
             call.resolve(result);
@@ -1254,6 +1543,10 @@ public class FoliaCorePlugin extends Plugin {
         completePickedAudioImport(call, uris, resultCode);
     }
 
+    /** 扫描文件夹的深度与数量上限：某些 ROM 的 DocumentsProvider 会把整个存储伪装成一棵极深的树。 */
+    private static final int AUDIO_SCAN_MAX_DEPTH = 8;
+    private static final int AUDIO_SCAN_MAX_FILES = 1500;
+
     @ActivityCallback
     private void handlePickedAudioFolder(PluginCall call, ActivityResult activityResult) {
         isAudioPickerOpen = false;
@@ -1262,6 +1555,7 @@ public class FoliaCorePlugin extends Plugin {
         List<Uri> uris = new ArrayList<>();
         Intent data = activityResult == null ? null : activityResult.getData();
         Uri treeUri = data == null ? null : data.getData();
+        boolean treeUnsupported = false;
         if (treeUri != null) {
             try {
                 getContext().getContentResolver().takePersistableUriPermission(
@@ -1271,12 +1565,70 @@ public class FoliaCorePlugin extends Plugin {
             } catch (Exception ignored) {
                 // Some providers do not offer persistable grants; the current grant is still usable.
             }
-            collectAudioDocuments(treeUri, DocumentsContract.getTreeDocumentId(treeUri), uris);
+            String rootDocumentId = null;
+            try {
+                // getTreeDocumentId 对非 tree URI 会直接抛 IllegalArgumentException。
+                rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri);
+            } catch (Exception error) {
+                // 有些厂商的文件管理器（ColorOS 就是）对 OPEN_DOCUMENT_TREE 只回一个普通
+                // document URI。别在这里崩，也别只报一句模糊的错：让界面退回「多选文件」。
+                treeUnsupported = true;
+                android.util.Log.w("FoliaCore", "not a tree uri: " + treeUri, error);
+            }
+            if (rootDocumentId != null) {
+                try {
+                    collectAudioDocuments(treeUri, rootDocumentId, uris, 0);
+                } catch (Exception error) {
+                    android.util.Log.w("FoliaCore", "audio folder scan failed", error);
+                }
+                android.util.Log.i("FoliaCore", "audio folder scan: " + uris.size()
+                    + " files from " + treeUri + " (doc=" + rootDocumentId + ")");
+                // 有些 ROM（ColorOS 的文件夹选择器就是）返回的 tree URI 能取到 doc id，
+                // 但逐个子项查询是空的。用 MediaStore 按同一路径再扫一遍，别让用户以为不支持。
+                if (uris.isEmpty()) {
+                    uris.addAll(collectAudioFromMediaStore(rootDocumentId));
+                    android.util.Log.i("FoliaCore", "audio folder fallback: " + uris.size() + " files via MediaStore");
+                    // MediaStore 要有音频读取权限才看得到文件：没授权就先问一次，再扫。
+                    if (uris.isEmpty() && getPermissionState(audioPermissionAlias()) != PermissionState.GRANTED) {
+                        pendingFolderDocumentId = rootDocumentId;
+                        requestPermissionForAlias(audioPermissionAlias(), call, "folderAudioPermissionCallback");
+                        return;
+                    }
+                }
+            } else {
+                // 退而求其次：如果回来的这个 URI 本身就是音频文件，就按单文件导入。
+                try {
+                    ContentResolver resolver = getContext().getContentResolver();
+                    String mimeType = resolver.getType(treeUri);
+                    if (isAudioDocument(queryDisplayName(resolver, treeUri), mimeType)) {
+                        uris.add(treeUri);
+                    }
+                } catch (Exception ignored) {
+                    // 读不出来就继续走下面的「通知界面降级」分支。
+                }
+            }
+        }
+        if (uris.isEmpty()) {
+            JSObject result = new JSObject();
+            result.put("tracks", new JSArray());
+            result.put("picked", 0);
+            result.put("resultCode", resultCode);
+            result.put("cancelled", resultCode != Activity.RESULT_OK);
+            if (resultCode == Activity.RESULT_OK && treeUnsupported) {
+                // 机器码：JS 收到后自动改开「选择文件（可多选）」。
+                result.put("error", "tree-unsupported");
+                result.put("uri", String.valueOf(treeUri));
+            } else if (resultCode == Activity.RESULT_OK && treeUri != null) {
+                result.put("error", "这个文件夹里没有找到音频文件，或系统不允许读取该目录");
+            }
+            call.resolve(result);
+            return;
         }
         completePickedAudioImport(call, uris, resultCode);
     }
 
-    private void collectAudioDocuments(Uri treeUri, String parentDocumentId, List<Uri> output) {
+    private void collectAudioDocuments(Uri treeUri, String parentDocumentId, List<Uri> output, int depth) {
+        if (depth > AUDIO_SCAN_MAX_DEPTH || output.size() >= AUDIO_SCAN_MAX_FILES) return;
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
         String[] projection = new String[]{
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -1286,11 +1638,12 @@ public class FoliaCorePlugin extends Plugin {
         try (Cursor cursor = getContext().getContentResolver().query(childrenUri, projection, null, null, null)) {
             if (cursor == null) return;
             while (cursor.moveToNext()) {
+                if (output.size() >= AUDIO_SCAN_MAX_FILES) return;
                 String documentId = cursor.getString(0);
                 String displayName = cursor.getString(1);
                 String mimeType = cursor.getString(2);
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
-                    collectAudioDocuments(treeUri, documentId, output);
+                    collectAudioDocuments(treeUri, documentId, output, depth + 1);
                     continue;
                 }
                 if (isAudioDocument(displayName, mimeType)) {
@@ -1300,6 +1653,88 @@ public class FoliaCorePlugin extends Plugin {
         } catch (Exception ignored) {
             // A provider can deny one subtree without invalidating the rest of the selection.
         }
+    }
+
+    /** tree 文档 id（primary:Music）→ 共享存储上的绝对路径；非外置卷返回 null。 */
+    private static String externalPathForDocumentId(String documentId) {
+        if (documentId == null) return null;
+        int colon = documentId.indexOf(':');
+        if (colon <= 0) return null;
+        String volume = documentId.substring(0, colon);
+        String relative = documentId.substring(colon + 1);
+        String root = "primary".equalsIgnoreCase(volume)
+            ? Environment.getExternalStorageDirectory().getAbsolutePath()
+            : "/storage/" + volume;
+        return relative.isEmpty() ? root : root + "/" + relative;
+    }
+
+    /**
+     * 按文件夹路径从 MediaStore 找音频。
+     *
+     * DocumentsProvider 列不出子项时的兜底：ColorOS 的文件夹选择器会回一个能取到 doc id、
+     * 却查不到 children 的 tree URI。MediaStore 里同一路径的文件仍然读得到。
+     */
+    private List<Uri> collectAudioFromMediaStore(String documentId) {
+        List<Uri> found = new ArrayList<>();
+        String path = externalPathForDocumentId(documentId);
+        if (path == null) return found;
+        ContentResolver resolver = getContext().getContentResolver();
+        Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String[] projection = new String[]{ MediaStore.Audio.Media._ID };
+        int colon = documentId.indexOf(':');
+        String relative = colon >= 0 ? documentId.substring(colon + 1) : "";
+        String selection = null;
+        String[] arguments = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !relative.isEmpty()) {
+            selection = MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ?";
+            arguments = new String[]{ relative + "/%" };
+        } else if (!relative.isEmpty()) {
+            selection = MediaStore.Audio.Media.DATA + " LIKE ?";
+            arguments = new String[]{ path + "/%" };
+        }
+        try (Cursor cursor = resolver.query(collection, projection, selection, arguments, null)) {
+            if (cursor != null) {
+                while (cursor.moveToNext()) found.add(ContentUris.withAppendedId(collection, cursor.getLong(0)));
+            }
+        } catch (Exception error) {
+            android.util.Log.w("FoliaCore", "MediaStore folder scan failed for " + path, error);
+        }
+        // RELATIVE_PATH 在某些 ROM 上为空：再按 DATA 试一次。
+        if (found.isEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !relative.isEmpty()) {
+            try (Cursor cursor = resolver.query(collection, projection,
+                MediaStore.Audio.Media.DATA + " LIKE ?", new String[]{ path + "/%" }, null)) {
+                if (cursor != null) {
+                    while (cursor.moveToNext()) found.add(ContentUris.withAppendedId(collection, cursor.getLong(0)));
+                }
+            } catch (Exception ignored) {
+                // 两种查法都不行就只能如实报告没找到。
+            }
+        }
+        return found;
+    }
+
+    /** 补问音频权限后继续文件夹导入（见 handlePickedAudioFolder 的 MediaStore 兜底）。 */
+    @PermissionCallback
+    private void folderAudioPermissionCallback(PluginCall call) {
+        String documentId = pendingFolderDocumentId;
+        pendingFolderDocumentId = null;
+        if (call == null) return;
+        List<Uri> uris = new ArrayList<>();
+        if (documentId != null && getPermissionState(audioPermissionAlias()) == PermissionState.GRANTED) {
+            uris.addAll(collectAudioFromMediaStore(documentId));
+        }
+        android.util.Log.i("FoliaCore", "audio folder after permission: " + uris.size() + " files");
+        if (uris.isEmpty()) {
+            JSObject result = new JSObject();
+            result.put("tracks", new JSArray());
+            result.put("picked", 0);
+            result.put("resultCode", Activity.RESULT_OK);
+            result.put("cancelled", false);
+            result.put("error", "没有在这个文件夹里找到音频文件，或系统不允许读取该目录");
+            call.resolve(result);
+            return;
+        }
+        completePickedAudioImport(call, uris, Activity.RESULT_OK);
     }
 
     private static boolean isAudioDocument(String displayName, String mimeType) {
@@ -1343,6 +1778,12 @@ public class FoliaCorePlugin extends Plugin {
                     String safeName = "imported-" + stableFileId(displayName, fileSize, directory);
                     File target = new File(directory, safeName);
                     if (!target.isFile() || target.length() != fileSize) {
+                        // 空间不够时继续写只会得到一个半截文件，播放时表现为「格式错误」；
+                        // 这里提前跳过并把原因带回去，比让系统在写入中途杀掉进程好。
+                        long usable = directory.getUsableSpace();
+                        if (fileSize > 0 && usable > 0 && fileSize > usable - 16L * 1024 * 1024) {
+                            throw new IOException("存储空间不足，跳过 " + displayName);
+                        }
                         try (InputStream source = resolver.openInputStream(uri);
                              OutputStream sink = new FileOutputStream(target)) {
                             if (source == null) continue;

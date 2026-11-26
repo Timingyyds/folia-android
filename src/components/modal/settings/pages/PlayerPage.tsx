@@ -21,6 +21,7 @@ import { PLAYER_BOTTOM_BAR_BASE_OFFSET_PX, resolvePlayerBottomBarMaxOffset } fro
 import { Button, FoldedGroup, Group, PictureChoice, Reveal, Row, Segmented, Select, Slider, TextField, Toggle, Value, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
 import { EntryViewPicture } from './pictures';
 import { useSettingsPage } from './settingsPageContext';
+import OnlineWallpaperLibrary from '../../../visualizer/videoLayer/OnlineWallpaperLibrary';
 
 // src/components/modal/settings/pages/PlayerPage.tsx
 // The 播放页 page: what the playing screen looks like. Which view play opens and the look of the
@@ -36,11 +37,14 @@ const PLAYER_UI: SettingsGroupDef = { id: 'labPlayerUi', titleKey: 'options.labP
 
 const O = {
     entryView: option(VIEW, 'playbackEntryViewChoice', 'options.playbackEntryView'),
+    wallForm: option(VIEW, 'latticeWallForm', 'options.latticeWallForm'),
+    radioHideUpcoming: option(VIEW, 'latticeRadioHideUpcoming', 'options.latticeRadioHideUpcoming'),
     vignette: option(VIEW, 'latticeSettings', 'options.latticeVignette'),
     tint: option(VIEW, 'latticePosterTint', 'options.latticePosterTint'),
     tintCustomColor: option(VIEW, 'latticePosterTintCustomColor', 'options.latticePosterTintCustomColor'),
     tintColor: option(VIEW, 'latticePosterTintColor', 'options.latticePosterTintColor'),
     tintIntensity: option(VIEW, 'latticePosterTintIntensity', 'options.latticePosterTintIntensity'),
+    badgeCurrentOnly: option(VIEW, 'latticeBadgeCurrentOnly', 'options.latticeBadgeCurrentOnly'),
     autoHide: option(BAR, 'autoHidePlayerChrome', 'options.autoHidePlayerChrome'),
     autoHideCursor: option(BAR, 'autoHideCursorWithPlayerChrome', 'options.autoHideCursorWithPlayerChrome'),
     idleCursorHide: option(BAR, 'hideCursorWhenIdle', 'options.hideCursorWhenIdle'),
@@ -51,8 +55,10 @@ const O = {
     cardTimeout: option(CARD, 'stageTrackPillTimeout', 'options.stageTrackPillTimeout'),
     cardPosition: option(CARD, 'stageTrackPillReposition', 'options.stageTrackPillReposition'),
     cardOnHome: option(CARD, 'stageTrackPillOnHome', 'options.stageTrackPillOnHome', { available: () => !isWallLibrarySuite(getActiveLibrarySuiteId()) }),
+    cardInObs: option(CARD, 'stageTrackPillInObs', 'options.stageTrackPillInObs'),
     cardCloseButton: option(CARD, 'showOpenPanelCloseButton', 'options.showOpenPanelCloseButton'),
     videoEnabled: option(VIDEO, 'videoLayerEnabled', 'options.videoLayerEnabled'),
+    videoOnlineWallpaper: option(VIDEO, 'videoLayerOnlineWallpaper', 'options.onlineWallpaperLibrary'),
     videoFile: option(VIDEO, 'videoLayerLocalFile', 'options.videoLayerLocalFile'),
     videoUrl: option(VIDEO, 'videoLayerUrl', 'options.videoLayerUrl'),
     videoOpacity: option(VIDEO, 'videoLayerOpacity', 'options.videoLayerOpacity'),
@@ -78,16 +84,22 @@ const PlayerPage: React.FC = () => {
         setPlaybackEntryView: state.setPlaybackEntryView,
     })));
     const lattice = useLatticeSettingsStore(useShallow(state => ({
+        wallForm: state.latticeWallForm,
+        radioHideUpcoming: state.latticeRadioHideUpcoming,
         vignette: state.latticeVignette,
         tintEnabled: state.latticePosterTintEnabled,
         tintUseCustomColor: state.latticePosterTintUseCustomColor,
         tintColor: state.latticePosterTintColor,
         tintIntensity: state.latticePosterTintIntensity,
+        badgeCurrentOnly: state.latticeBadgeCurrentOnly,
+        setWallForm: state.handleSetLatticeWallForm,
+        setRadioHideUpcoming: state.handleToggleLatticeRadioHideUpcoming,
         setVignette: state.handleToggleLatticeVignette,
         setTintEnabled: state.handleToggleLatticePosterTint,
         setTintUseCustomColor: state.handleToggleLatticePosterTintCustomColor,
         setTintColor: state.handleSetLatticePosterTintColor,
         setTintIntensity: state.handleSetLatticePosterTintIntensity,
+        setBadgeCurrentOnly: state.handleToggleLatticeBadgeCurrentOnly,
     })));
     const chrome = usePlayerChromeSettingsStore(useShallow(state => ({
         autoHide: state.autoHidePlayerChrome,
@@ -118,9 +130,11 @@ const PlayerPage: React.FC = () => {
         mode: state.stageTrackPillMode,
         timeoutSec: state.stageTrackPillTimeoutSec,
         onHome: state.stageTrackPillOnHome,
+        inObs: state.stageTrackPillInObs,
         setMode: state.handleSetStageTrackPillMode,
         setTimeoutSec: state.handleSetStageTrackPillTimeoutSec,
         setOnHome: state.handleToggleStageTrackPillOnHome,
+        setInObs: state.handleToggleStageTrackPillInObs,
     })));
     const video = useVideoLayerSettingsStore(useShallow(state => ({
         enabled: state.videoLayerEnabled,
@@ -130,6 +144,9 @@ const PlayerPage: React.FC = () => {
         localFileName: state.localFileName,
         localFileStatus: state.localFileStatus,
         canPersistLocalFile: state.canPersistLocalFile,
+        onlineWallpaperName: state.onlineWallpaperName,
+        onlineWallpaperId: state.onlineWallpaperId,
+        clearOnlineWallpaper: state.clearOnlineWallpaper,
         setEnabled: state.setVideoLayerEnabled,
         setUrl: state.setVideoLayerUrl,
         setOpacity: state.setVideoLayerOpacity,
@@ -184,6 +201,7 @@ const PlayerPage: React.FC = () => {
             setStatusMessage({ type: 'error', text: t('options.videoLayerPickFailed') });
         }
     };
+    const [wallpaperLibraryOpen, setWallpaperLibraryOpen] = useState(false);
 
     return (
         <>
@@ -199,6 +217,21 @@ const PlayerPage: React.FC = () => {
                         onChange={setPlaybackEntryView}
                     />
                 </Row>
+                <Row option={O.wallForm} note={t('options.latticeWallFormDesc')}>
+                    <Segmented
+                        value={lattice.wallForm}
+                        options={[
+                            { value: 'poster', label: t('options.latticeWallForm_poster') },
+                            { value: 'radio', label: t('options.latticeWallForm_radio') },
+                        ]}
+                        onChange={lattice.setWallForm}
+                    />
+                </Row>
+                <Reveal when={lattice.wallForm === 'radio'}>
+                    <Row sub option={O.radioHideUpcoming} hint={t('options.latticeRadioHideUpcomingDesc')}>
+                        <Toggle checked={lattice.radioHideUpcoming} onChange={lattice.setRadioHideUpcoming} />
+                    </Row>
+                </Reveal>
                 <Row option={O.vignette} note={t('options.latticeVignetteDesc')}>
                     <Toggle checked={lattice.vignette} onChange={lattice.setVignette} />
                 </Row>
@@ -226,6 +259,9 @@ const PlayerPage: React.FC = () => {
                         <Slider value={lattice.tintIntensity} min={0} max={1} step={0.01} onChange={lattice.setTintIntensity} format={percent} />
                     </Row>
                 </Reveal>
+                <Row option={O.badgeCurrentOnly} note={t('options.latticeBadgeCurrentOnlyDesc')}>
+                    <Toggle checked={lattice.badgeCurrentOnly} onChange={lattice.setBadgeCurrentOnly} />
+                </Row>
             </Group>
 
             <Group def={BAR}>
@@ -307,6 +343,11 @@ const PlayerPage: React.FC = () => {
                         </Row>
                     </Reveal>
                 )}
+                <Reveal when={card.mode !== 'never'}>
+                    <Row option={O.cardInObs} note={t('options.stageTrackPillInObsDesc')}>
+                        <Toggle checked={card.inObs} onChange={card.setInObs} />
+                    </Row>
+                </Reveal>
                 <Row option={O.cardCloseButton} hint={t('options.showOpenPanelCloseButtonDesc')}>
                     <Toggle checked={chrome.cardCloseButton} onChange={chrome.setCardCloseButton} />
                 </Row>
@@ -325,6 +366,17 @@ const PlayerPage: React.FC = () => {
                 >
                     <Toggle checked={video.enabled} onChange={video.setEnabled} />
                 </Row>
+                <Reveal when={video.enabled}>
+                    <Row sub option={O.videoOnlineWallpaper} note={t('options.onlineWallpaperLibraryDesc')}>
+                        {video.onlineWallpaperId && (
+                            <>
+                                <Value tip={video.onlineWallpaperName ?? undefined}>{video.onlineWallpaperName}</Value>
+                                <Button icon={X} tip={t('options.onlineWallpaperClear')} onClick={video.clearOnlineWallpaper} />
+                            </>
+                        )}
+                        <Button onClick={() => setWallpaperLibraryOpen(true)}>{t('options.onlineWallpaperOpen')}</Button>
+                    </Row>
+                </Reveal>
                 <Reveal when={video.enabled || video.localFileStatus !== 'none'}>
                     <Row
                         sub
@@ -398,6 +450,11 @@ const PlayerPage: React.FC = () => {
                     </Row>
                 )}
             </FoldedGroup>
+
+            <OnlineWallpaperLibrary
+                isOpen={wallpaperLibraryOpen}
+                onClose={() => setWallpaperLibraryOpen(false)}
+            />
         </>
     );
 };

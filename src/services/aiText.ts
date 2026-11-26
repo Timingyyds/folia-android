@@ -68,6 +68,10 @@ const WEB_ROUTE_WITHOUT_KEY = 'Server configuration error';
 export const isMissingAiApiKeyError = (error: unknown) => {
   const message = getErrorMessage(error);
   return message === WEB_ROUTE_WITHOUT_KEY
+    // 安卓直连层的提示（没填 Key / 模型 / 地址）：同样属于「AI 还没配置」，应当回退内置主题。
+    || /还没有填\s*API\s*Key/i.test(message)
+    || /还没有选模型/.test(message)
+    || /还没有填\s*API\s*地址/.test(message)
     || (/(?:openai_api_key|gemini_api_key|api key)/i.test(message)
       && /(?:not configured|missing|configure)/i.test(message));
 };
@@ -84,8 +88,11 @@ export const generateThemeFromLyrics = async (
     }
 
     // 安卓：没有 Electron 主进程，也没有部署方的 /api 路由，由 WebView 直连服务商。
-    if (isNativeBridgeAvailable() && canUseNativeAi()) {
-      return await generateThemeNative(lyricsText, options);
+    if (isNativeBridgeAvailable()) {
+      if (canUseNativeAi()) return await generateThemeNative(lyricsText, options);
+      // 没有 Key 就不要继续往下走：/api/generate-theme 在安卓上只是静态站点的一个 404，
+      // 拿到的是 HTML，报出来的错和「AI 未配置」毫无关系。抛一个能识别的错，交给上层回退。
+      throw new Error('AI API key is not configured');
     }
 
     const response = await fetch(themeRoute(getWebAiProvider()), {

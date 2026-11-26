@@ -8,8 +8,8 @@ android {
         applicationId "ti.folia.ming"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2300
-        versionName "2.3.0"
+        versionCode 2306
+        versionName "2.3.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -18,7 +18,9 @@ android {
         }
     }
     signingConfigs {
-        debug {
+        // 固定签名（folia-debug.keystore，CN=Folia Debug）：与你现有的 Folia 2.3.0 安装包同一张证书，
+        // debug/release 都用它，换机器构建也能直接覆盖更新并保留数据。
+        folia {
             storeFile file('folia-debug.keystore')
             storePassword 'folia2026'
             keyAlias 'folia-debug'
@@ -27,9 +29,10 @@ android {
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.folia
         }
         release {
+            signingConfig signingConfigs.folia
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

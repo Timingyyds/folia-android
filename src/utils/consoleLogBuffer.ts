@@ -33,6 +33,19 @@ const readScope = (text: string): string | null => /^\[([^\]\s]{1,40})\]/.exec(t
 /** Bounded, because this runs for the whole life of the app and a long session logs a lot. */
 const LIMIT = 1000;
 
+/**
+ * 单条日志的字符上限。
+ *
+ * 这个缓冲保留最近一千条，而调用方偶尔会把整个响应体、播放列表或一首歌的记录直接丢进
+ * console —— 一条几 MB 的行乘上一千条就是几百 MB，低内存设备播几首歌就 OOM 闪退。
+ * 超出部分截断：诊断要看的是开头和结尾，不是中间那一大段 base64。
+ */
+const MAX_LINE_CHARS = 4000;
+
+const clip = (text: string, max: number): string => (
+    text.length > max ? `${text.slice(0, max)}… (${text.length - max} chars clipped)` : text
+);
+
 let entries: ConsoleLogEntry[] = [];
 let nextId = 0;
 const listeners = new Set<() => void>();
@@ -115,7 +128,7 @@ const push = (level: ConsoleLevel, args: unknown[]) => {
     // Before the formatting, not after: turning capture off has to stop the work, not just the
     // storing. Serialising every console argument is the expensive half.
     if (!capturing) return;
-    const text = args.map(format).join(' ');
+    const text = clip(args.map(format).join(' '), MAX_LINE_CHARS);
     // A new array rather than a mutated one: useSyncExternalStore compares snapshots by identity,
     // and a buffer changed in place would leave the panel rendering a list it thinks is current.
     entries = entries.concat({
@@ -145,7 +158,7 @@ const push = (level: ConsoleLevel, args: unknown[]) => {
 export const recordMainProcessLines = (lines: ReadonlyArray<{ at: number; level: ConsoleLevel; text: string }>) => {
     if (!capturing || !lines.length) return;
     entries = entries
-        .concat(lines.map(({ at, level, text }) => ({ id: nextId += 1, at, level, text, scope: readScope(text) })))
+        .concat(lines.map(({ at, level, text }) => ({ id: nextId += 1, at, level, text: clip(text, MAX_LINE_CHARS), scope: readScope(text) })))
         .sort((a, b) => a.at - b.at);
     if (entries.length > LIMIT) entries = entries.slice(entries.length - LIMIT);
     listeners.forEach(listener => listener());

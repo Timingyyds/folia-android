@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Menu, Progress, Reveal, Row } from '../kit';
 import { openOutsideLink } from '../../../../utils/system/outsideLink';
 import { useSettingsPage } from './settingsPageContext';
+import { offersChinaDrives } from './ChinaDrivesRow';
 
 // src/components/modal/settings/pages/FoundUpdateRow.tsx
 // The row a found update gets, on the 通用 page and on the Help page: the new version, the list of
@@ -38,7 +39,7 @@ export const FoundUpdateRow: React.FC<FoundUpdateRowProps> = ({ sub }) => {
     const isLinuxBuild = updateStatus?.platform === 'linux';
     const isStableChannel = electronSettings.UPDATE_CHANNEL === 'realeco';
     // The two drives are offered for the stable channel, and not on Linux.
-    const offersDrives = isStableChannel && !isLinuxBuild;
+    const offersDrives = offersChinaDrives(updateStatus, electronSettings.UPDATE_CHANNEL);
     // What a found version needs from the listener where the app cannot update itself.
     const manualNotice = updateStatus?.platform === 'darwin'
         ? t('options.macManualUpdateNotice')
@@ -67,6 +68,14 @@ export const FoundUpdateRow: React.FC<FoundUpdateRowProps> = ({ sub }) => {
     // The updater gives no usable percent while it does not know the size.
     const reported = updateStatus?.downloadProgress?.percent;
     const percent = typeof reported === 'number' && Number.isFinite(reported) ? reported : 0;
+    // The updater first tries only the changed blocks and, when that fails, starts over with the whole
+    // installer: the label says which, so the second pass does not look like the first starting over.
+    const downloadMode = updateStatus?.downloadProgress?.mode;
+    const progressKey = updateStatus?.downloadProgress?.fallback
+        ? 'options.downloadingFullFallbackProgress'
+        : downloadMode === 'differential'
+            ? 'options.downloadingDifferentialProgress'
+            : 'options.downloadingProgress';
 
     return (
         <Reveal when={Boolean(version)}>
@@ -101,7 +110,7 @@ export const FoundUpdateRow: React.FC<FoundUpdateRowProps> = ({ sub }) => {
                 />
                 {autoUpdateSupported && isDownloading && (
                     <Progress value={percent / 100}>
-                        {t('options.downloadingProgress', { percent: Math.round(percent) })}
+                        {t(progressKey, { percent: Math.round(percent) })}
                     </Progress>
                 )}
                 {autoUpdateSupported && !electronSettings.ENABLE_AUTO_UPDATE && !isDownloading && !isDownloaded && (

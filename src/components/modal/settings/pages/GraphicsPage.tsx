@@ -4,15 +4,21 @@ import { useShallow } from 'zustand/react/shallow';
 import ConfirmDialog from '../../../shared/ConfirmDialog';
 import { MOTION_SURFACE_IDS, useMotionSettingsStore, type MotionSurfaceId } from '../../../../stores/useMotionSettingsStore';
 import { usePlayerChromeSettingsStore } from '../../../../stores/usePlayerChromeSettingsStore';
+import { useDesktopSettingsStore } from '../../../../stores/useDesktopSettingsStore';
 import { useThemeSettingsStore } from '../../../../stores/useThemeSettingsStore';
 import { useVisualizerSettingsStore } from '../../../../stores/useVisualizerSettingsStore';
+import type { LyricAntialias } from '../../../../types';
 import { VISUALIZER_FRAME_RATE_OPTIONS } from '../../../../utils/frameRateLimiter';
-import { Group, Link, Reveal, Row, Segmented, Toggle, option, useSettingsKitTheme, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
+import { LYRIC_RENDER_SCALES } from '../../../../utils/lyricRenderQuality';
+import { lyricAntialiasChoices, lyricRenderScaleChoices } from '../../../visualizer/renderQuality/LyricRenderQualityRows';
+import { openPerfCheck } from '../../../perfCheck/openPerfCheck';
+import { Button, Group, Link, Reveal, Row, Segmented, Toggle, option, useSettingsKitTheme, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
 
 // src/components/modal/settings/pages/GraphicsPage.tsx
-// The 性能与动效 page: what trades picture for smoothness or works around a renderer problem
-// (static mode, the home background, native blur, the frame-rate cap, the Linux glow fix), and
-// which parts of the interface play reduced motion.
+// The 动画与性能 page: what trades picture for smoothness or works around a renderer problem
+// (static mode, the home background, native blur, the frame-rate cap, the lyric canvas resolution and
+// anti-aliasing every canvas / WebGL lyric style follows by default, background throttling, the
+// Linux glow fix, the Windows render GPU), and which parts of the interface play reduced motion.
 
 /** Docs page behind the "Fix lyric animation freeze on Linux" switch. */
 const CHROMIUM_FD_EXHAUSTION_DOCS_URL = 'https://folia-site.cielaniska.top/guide/chromium-fd-exhaustion';
@@ -27,11 +33,15 @@ const PERFORMANCE: SettingsGroupDef = { id: 'graphicsPerformance', titleKey: 'op
 const MOTION: SettingsGroupDef = { id: 'graphicsMotion', titleKey: 'options.reduceMotionSection' };
 
 const O = {
+    perfCheck: option(PERFORMANCE, 'perfCheck', 'options.perfCheck', { electronOnly: true }),
     staticMode: option(PERFORMANCE, 'enableStaticMode', 'options.enableStaticMode'),
     homeBackground: option(PERFORMANCE, 'disableHomeDynamicBackground', 'options.disableHomeDynamicBackground'),
     nativeBlur: option(PERFORMANCE, 'enablePlayerPageNativeBlur', 'options.enablePlayerPageNativeBlur'),
     frameRate: option(PERFORMANCE, 'visualizerFrameRate', 'options.visualizerFrameRate'),
     frameRateValue: option(PERFORMANCE, 'visualizerFrameRateValue', 'options.visualizerFrameRateValue'),
+    lyricRenderScale: option(PERFORMANCE, 'lyricRenderScale', 'options.lyricRenderScale'),
+    lyricAntialias: option(PERFORMANCE, 'lyricAntialias', 'options.lyricAntialias'),
+    backgroundThrottling: option(PERFORMANCE, 'backgroundThrottling', 'options.backgroundThrottling', { electronOnly: true }),
     glowFix: option(PERFORMANCE, 'glowBlurQuantize', 'options.glowBlurQuantize'),
     followSystem: option(MOTION, 'reduceMotionFollowSystem', 'options.reduceMotionFollowSystem'),
 };
@@ -56,6 +66,10 @@ const FRAME_RATE_CHOICES = VISUALIZER_FRAME_RATE_OPTIONS.map(rate => ({ value: S
 const GraphicsPage: React.FC = () => {
     const { t } = useTranslation();
     const { isDaylight } = useSettingsKitTheme();
+    // 后台节流只有桌面版有（electron/backgroundThrottling.cjs）；安卓端没有 window.electron，这一行不显示。
+    const isElectron = typeof window !== 'undefined' && Boolean((window as unknown as { electron?: unknown }).electron);
+    const backgroundThrottling = useDesktopSettingsStore(state => state.backgroundThrottling);
+    const setBackgroundThrottling = useDesktopSettingsStore(state => state.handleToggleBackgroundThrottling);
     const theme = useThemeSettingsStore(useShallow(state => ({
         staticMode: state.staticMode,
         homeBackgroundOff: state.disableHomeDynamicBackground,
@@ -69,6 +83,8 @@ const GraphicsPage: React.FC = () => {
         glowFix: state.glowBlurQuantize,
         setFrameRate: state.handleSetVisualizerFrameRate,
         setGlowFix: state.handleToggleGlowBlurQuantize,
+        renderQuality: state.lyricRenderQuality,
+        setRenderQuality: state.handleSetLyricRenderQuality,
     })));
     const motion = useMotionSettingsStore(useShallow(state => ({
         surfaces: state.reducedMotionSurfaces,
@@ -84,6 +100,11 @@ const GraphicsPage: React.FC = () => {
     return (
         <>
             <Group def={PERFORMANCE}>
+                {isElectron && (
+                    <Row option={O.perfCheck} hint={t('options.perfCheckDesc')}>
+                        <Button onClick={() => openPerfCheck()}>{t('options.perfCheckRun')}</Button>
+                    </Row>
+                )}
                 <Row option={O.staticMode} hint={t('options.enableStaticModeDesc')}>
                     <Toggle checked={theme.staticMode} onChange={theme.setStaticMode} />
                 </Row>
@@ -113,6 +134,28 @@ const GraphicsPage: React.FC = () => {
                         />
                     </Row>
                 </Reveal>
+                <Row option={O.lyricRenderScale} note={t('options.lyricRenderScaleDesc')}>
+                    <Segmented
+                        value={String(visualizer.renderQuality.scale)}
+                        options={lyricRenderScaleChoices()}
+                        onChange={(value) => {
+                            const scale = LYRIC_RENDER_SCALES.find(candidate => String(candidate) === value);
+                            if (scale) visualizer.setRenderQuality({ scale });
+                        }}
+                    />
+                </Row>
+                <Row option={O.lyricAntialias} note={t('options.lyricAntialiasDesc')}>
+                    <Segmented<LyricAntialias>
+                        value={visualizer.renderQuality.antialias}
+                        options={lyricAntialiasChoices(t)}
+                        onChange={antialias => visualizer.setRenderQuality({ antialias })}
+                    />
+                </Row>
+                {isElectron && (
+                    <Row option={O.backgroundThrottling} hint={t('options.backgroundThrottlingHint')} note={t('options.backgroundThrottlingDesc')}>
+                        <Toggle checked={backgroundThrottling} onChange={setBackgroundThrottling} />
+                    </Row>
+                )}
                 <Row
                     option={O.glowFix}
                     hint={(

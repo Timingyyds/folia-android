@@ -281,6 +281,14 @@ const fetchWithCreds = async (endpoint: string, options: RequestInit = {}, limit
   return data;
 };
 
+/**
+ * One request of the platform's raw endpoints (neteaseRaw.ts)：`route` 是本地后端的路由（`/user/record`），
+ * `query` 是已经拼好的查询串。会话照其他请求一样带上，按在线请求计时，`signal` 同样能中断它。
+ */
+export const requestNeteaseRoute = (route: string, query: string, signal: AbortSignal) => (
+  fetchWithCreds(query ? `${route}?${query}` : route, { signal }, 'online')
+);
+
 const toHttps = (url?: unknown) => {
   if (typeof url !== 'string' || !url) return '';
   return url.replace(/^http:/, 'https:');
@@ -934,6 +942,12 @@ export const neteaseApi = {
     return fetchWithCreds(`/cloud/lyric/get?uid=${uid}&sid=${sid}`);
   },
 
+  // The account's listening ranking (`/user/record`): type 1 is the last week (`weekData`), 0 all
+  // time (`allData`), each row `{ playCount, score, song }`. It comes whole, without pages.
+  getUserRecord: async (uid: number, type: 0 | 1) => {
+    return fetchWithCreds(`/user/record?uid=${uid}&type=${type}`);
+  },
+
   getUserCloud: async (limit = 200, offset = 0) => {
     const res = await fetchWithCreds(`/user/cloud?limit=${limit}&offset=${offset}`);
     const normalizedSongs = (res.data || []).map((item: any) => normalizeSongResult({
@@ -969,9 +983,11 @@ export const neteaseApi = {
   getUnavailableSongReplacement,
 
   // --- Search ---
-  cloudSearch: async (keywords: string, limit = 30, offset = 0) => {
-    const res = await fetchWithCreds(`/cloudsearch?keywords=${encodeURIComponent(keywords)}&limit=${limit}&offset=${offset}`);
-    if (res.result) {
+  // `type`: 1 songs (the default, left out of the URL), 10 albums, 1000 playlists.
+  cloudSearch: async (keywords: string, limit = 30, offset = 0, type: 1 | 10 | 1000 = 1) => {
+    const typeParam = type === 1 ? '' : `&type=${type}`;
+    const res = await fetchWithCreds(`/cloudsearch?keywords=${encodeURIComponent(keywords)}&limit=${limit}&offset=${offset}${typeParam}`);
+    if (res.result && type === 1) {
       res.result.songs = mergeSongsWithPrivileges(res.result.songs, res.result.privileges ?? res.privileges);
     }
     return res;
@@ -1048,6 +1064,25 @@ export const neteaseApi = {
       songs: mergeSongsWithPrivileges(rawSongs, res.data?.privileges || res.privileges),
     };
   },
+
+  // Style recommendations (#938): another 30 daily songs, for the styles the account picked. The styles
+  // come in groups (genre, mood, scene, language, theme) and a pick is some tags of one group; it is kept
+  // on the account (a guest has one too), and the songs answer names the pick in `data.tags`.
+  // (Measured 2026-11-01 as a guest: all three answer code 200, songs in the old format with their
+  // privilege inside; a pick naming a tag of another group is answered saveSuccess as well.)
+  getDailyStyleConfigs: async () => fetchWithCreds(`/recommend/category/configs?timestamp=${Date.now()}`),
+
+  getDailyStyleSongs: async () => {
+    const res = await fetchWithCreds(`/recommend/category/songs?timestamp=${Date.now()}`);
+    return {
+      ...res,
+      songs: mergeSongsWithPrivileges(res.data?.dailySongs || [], res.data?.privileges),
+    };
+  },
+
+  setDailyStyle: async (categoryId: number, tagIds: number[]) => (
+    fetchWithCreds(`/recommend/category/set?category=${categoryId}&tags=${tagIds.join(',')}&timestamp=${Date.now()}`)
+  ),
 
   getPersonalizedPlaylists: async (limit = 35) => {
     return fetchWithCreds(`/personalized?limit=${limit}`);

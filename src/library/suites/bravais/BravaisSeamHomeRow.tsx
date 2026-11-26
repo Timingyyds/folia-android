@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { BravaisLayer, BravaisSeamTab } from './bravaisLayer';
 import type { BravaisHomeShortcut } from './bravaisHomeModels';
 import type { BravaisSeamLevel } from './bravaisSeamLevel';
-import BravaisSeamHomeTools from './BravaisSeamHomeTools';
+import BravaisSeamHomeTools, { homePageLayout } from './BravaisSeamHomeTools';
 import BravaisSeamAccountSwitcher from './BravaisSeamAccountSwitcher';
 import { BravaisSeamAccountSlot, HomeSeamSections, HomeSeamShortcuts } from './BravaisSeamHome';
 import { BravaisSeamFlipText, useBravaisSeamFade } from './BravaisSeamFlip';
@@ -82,6 +82,8 @@ const BravaisSeamHomeRow: React.FC<{
     const sections = !compact && home?.sections && home.sections.length > 0 ? home.sections : null;
     const shortcuts = home?.shortcuts && home.shortcuts.length > 0 ? home.shortcuts : null;
     const rowShortcuts = compact ? null : shortcuts;
+    const rowEntries = !compact && home?.entries && home.entries.length > 0 ? home.entries : null;
+    const hasRowJumps = rowShortcuts !== null || rowEntries !== null;
     const reveal = bravaisRevealMotion(useBravaisReducedTransitions());
     const filterEditing = useBravaisUiStore(state => state.filterEditing);
     const labelsKey = tabs.map(tab => tab.label).join('\u0000');
@@ -91,10 +93,10 @@ const BravaisSeamHomeRow: React.FC<{
     const navRef = useRef<HTMLDivElement>(null);
     const accountRef = useRef<HTMLDivElement>(null);
     const measureRef = useRef<HTMLDivElement>(null);
-    const fit = useBravaisSeamRowFit({ rowRef, navRef, accountRef, measureRef });
+    const fit = useBravaisSeamRowFit({ rowRef, navRef, accountRef, measureRef, pageCells: home ? homePageLayout(home, compact).cells : 0 });
     const short = fit.level === 'short';
     const titled = !compact && fit.level === 'titled';
-    const shortcutsInRow = rowShortcuts !== null && fit.shortcuts;
+    const shortcutsInRow = hasRowJumps && fit.shortcuts;
     // 缩减级别变了：导航段淡入新的样子，不硬切。
     useBravaisSeamFade(`${fit.level}|${fit.shortcuts}|${fit.accountCompact}`, navRef);
     const expand = () => setLevel('full');
@@ -109,9 +111,9 @@ const BravaisSeamHomeRow: React.FC<{
                     <HomeSeamSections sections={sections} short={abbreviated} measure />
                 </div>
             )}
-            {jumps && rowShortcuts && (
+            {jumps && hasRowJumps && (
                 <div className="bravais-seam-home-jumps">
-                    <HomeSeamShortcuts shortcuts={rowShortcuts} rule={Boolean(sections)} measure />
+                    <HomeSeamShortcuts shortcuts={rowShortcuts ?? []} entries={rowEntries} rule={Boolean(sections)} measure />
                 </div>
             )}
         </div>
@@ -119,7 +121,7 @@ const BravaisSeamHomeRow: React.FC<{
 
     return (
         <div ref={rowRef} className={`bravais-seam-home-row${compact ? ' is-compact' : ''}${short ? ' has-short-tabs' : ''}`} data-bravais-home-seam
-            data-bravais-home-fit={fit.level} data-bravais-home-shortcuts={rowShortcuts ? (shortcutsInRow ? 'column' : 'menu') : undefined}>
+            data-bravais-home-fit={fit.level} data-bravais-home-shortcuts={hasRowJumps ? (shortcutsInRow ? 'column' : 'menu') : undefined}>
             <button type="button" className="bravais-seam-icon" data-bravais-seam-action="hide" onClick={() => setLevel('hidden')}
                 aria-label={t('libraryBravais.seamFold')} title={t('libraryBravais.seamFold')}>
                 <FoldHorizontal aria-hidden />
@@ -144,7 +146,7 @@ const BravaisSeamHomeRow: React.FC<{
                         )}
                         {shortcutsInRow && (
                             <div className="bravais-seam-home-jumps" data-bravais-home-jumps>
-                                <HomeSeamShortcuts shortcuts={rowShortcuts} label={home?.shortcutsLabel} rule={Boolean(sections)} onOpen={openShortcut} />
+                                <HomeSeamShortcuts shortcuts={rowShortcuts ?? []} entries={rowEntries} label={home?.shortcutsLabel} rule={Boolean(sections)} onOpen={openShortcut} />
                             </div>
                         )}
                         <AnimatePresence initial={false}>
@@ -187,7 +189,8 @@ const BravaisSeamHomeRow: React.FC<{
             )}
             {home && (
                 <BravaisSeamHomeTools home={home} compact={compact} onExpand={expand}
-                    menuShortcuts={rowShortcuts && !shortcutsInRow ? rowShortcuts : null} onOpenShortcut={openShortcut} />
+                    menuShortcuts={rowShortcuts && !shortcutsInRow ? rowShortcuts : null} onOpenShortcut={openShortcut}
+                    menuEntries={rowEntries && !shortcutsInRow ? rowEntries : null} pageLimit={fit.pageRows} />
             )}
             {compact && (
                 <button type="button" className="bravais-seam-icon" data-bravais-seam-action="expand" onClick={expand}

@@ -105,3 +105,33 @@ export async function requestQishui<T = unknown>(operation: QishuiOperation, par
     }
     return data as T;
 }
+
+// The image type the bytes themselves say, for the formats a scene icon comes in; null when they say none of them.
+function sniffImageType(bytes: Uint8Array): string | null {
+    const starts = (...head: number[]) => head.every((byte, index) => bytes[index] === byte);
+    if (starts(0x89, 0x50, 0x4e, 0x47)) return 'image/png';
+    if (starts(0xff, 0xd8, 0xff)) return 'image/jpeg';
+    if (starts(0x47, 0x49, 0x46, 0x38)) return 'image/gif';
+    if (starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+    return null;
+}
+const RASTER_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+
+// Scene artwork is public CDN content; it is fetched without any account headers or cookies.
+// The data URL carries the image's own type: the CDN's template decides the format, not the address.
+export async function readQishuiSceneIcon(raw: string): Promise<string> {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || !/(?:^|\.)douyinpic\.com$/.test(url.hostname) || url.username || url.password) {
+        throw new Error('Invalid scene artwork URL');
+    }
+    const response = await fetch(url.href, { credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(8000) });
+    const declared = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ?? '';
+    if (!response.ok || !declared.startsWith('image/')) throw new Error('Scene artwork is unavailable');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > 512 * 1024) throw new Error('Scene artwork is too large');
+    const type = sniffImageType(bytes) ?? (RASTER_TYPES.has(declared) ? declared : null);
+    if (!type) throw new Error('Scene artwork is not a raster image');
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return `data:${type};base64,${btoa(binary)}`;
+}

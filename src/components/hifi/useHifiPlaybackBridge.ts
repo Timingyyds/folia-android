@@ -91,7 +91,7 @@ export function useHifiPlaybackBridge({
     const exclusive = useHifiSettingsStore(state => state.exclusive);
     const dsdMode = useHifiSettingsStore(state => state.dsdMode);
     const softwareVolume = useHifiSettingsStore(state => state.softwareVolume);
-    const loopFile = effectiveLoopMode === 'one' && !isFmMode;
+    const loopFile = effectiveLoopMode === 'one';
 
     // 推送回调里用的最新版本；渲染期不写 ref，放进 effect。
     const latestRef = useRef({ handleNextTrack, playSong, t, loopFile });
@@ -206,7 +206,7 @@ export function useHifiPlaybackBridge({
         const end = async (track: HifiTrack) => {
             if (endedTrackKey === track.trackKey) return;
             endedTrackKey = track.trackKey;
-            await latestRef.current.handleNextTrack({ allowStopOnMissing: true, shouldNavigateToPlayer: false });
+            await latestRef.current.handleNextTrack({ allowStopOnMissing: true, playedToEnd: true, shouldNavigateToPlayer: false });
             // 有下一首时 handleNextTrack 不等它载入就返回，那时曲目还是这一首；队尾的 stopAtQueueEnd 才把状态写成 IDLE。
             if (!isHifiRoute() || useHifiTrackStore.getState().current?.trackKey !== track.trackKey) return;
             if (usePlaybackStore.getState().playerState !== PlayerState.IDLE) return;

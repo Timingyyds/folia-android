@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "minConfidence": 0.6,
+  "maxCauses": 3,
+  "reportChars": 7000,
+  "descriptionChars": 800,
+  "causes": [
+    {
+      "id": "qq-device-limit",
+      "providers": ["qq"],
+      "title": "QQ 音乐账号的登录设备数已达上限",
+      "symptoms": "扫码并在手机上确认后，凭据交换（phase=credential-exchange）阶段上游返回 upstreamCode=20279，随后 get-login-user 返回 code=1000，界面报 credential-validation / upstream-rejected。qq-music-api 3.3.0 起响应另带 upstreamErrorKey=auth.device-limit，手机 QQ 扫码和 QQ 音乐 App 扫码的 20279 都在 primaryFailure 里。",
+      "match": ["upstreamCode[\"=:]+20279\\b", "auth\\.device-limit\\b"],
+      "steps": [
+        "打开 QQ 音乐官方客户端，进入「设置 → 设备管理」（在设置页最下面），移除不再使用的登录设备。",
+        "QQ 音乐对同时登录的设备数有限制：免费用户 1 台，绿钻 3 台，超级会员 5 台。",
+        "移除后回到 Folia，重新扫码登录。"
+      ]
+    },
+    {
+      "id": "web-api-not-configured",
+      "providers": [],
+      "title": "网页版部署没有配置音源 API 地址",
+      "symptoms": "网页版（runtime: web），start:error 报 Failed to access environment variables for API base / Please configure VITE_*_API_BASE，或 runtime 显示 remote API not configured。这是部署配置问题，不是账号或网络问题。",
+      "match": ["Please configure VITE_\\w+_API_BASE", "remote API not configured"],
+      "steps": [
+        "这是自行部署的网页版缺少后端配置。网页版需要自己部署对应平台的 API 服务（网易云为 NeteaseCloudMusicApi，酷狗为 KuGouMusicApi，QQ 音乐见 `docs/qq-music-deployment.md`）。",
+        "在部署平台的环境变量里填写 `VITE_NETEASE_API_BASE`（酷狗为 `VITE_KUGOU_API_BASE`，QQ 音乐为 `VITE_QQ_API_BASE`），指向你部署好的 API 地址，说明见 `docs/technical.md`。",
+        "这些变量在构建时写入前端，修改后必须重新构建并部署。",
+        "如果只是想直接使用，推荐下载 Electron 桌面版：桌面版内置了这些服务，不需要额外部署。"
+      ]
+    },
+    {
+      "id": "web-api-loopback",
+      "providers": [],
+      "title": "网页版的 API 地址指向本机（localhost）",
+      "symptoms": "网页版（user agent 不含 Electron）配置的 API 地址是 localhost / 127.0.0.1，通常是照抄了 .env.example 的 http://localhost:3000 再部署或打包进 App。手机上、或者访问别人部署的网站时，本机都没有 API 服务，请求要么连不上，要么打到本机别的服务上（常见 code 404）。新版报告里自检会报 ELOOPBACK。",
+      "match": [
+        "\\bELOOPBACK\\b",
+        ["^user agent: (?![^\\n]*Electron/)[^\\n]*(?:Android|iPhone|iPad)", "(?:remote API|backend: remote) (?:https?://(?:localhost|127\\.[\\d.]+|\\[::1\\])\\b|https? local\\b)"],
+        ["^user agent: (?![^\\n]*Electron/)", "(?:remote API|backend: remote) (?:https?://(?:localhost|127\\.[\\d.]+|\\[::1\\])\\b|https? local\\b)", "^generated: (?![\\s\\S]*^origin: https?://(?:localhost|127\\.|\\[::1\\]))"]
+      ],
+      "steps": [
+        "`VITE_NETEASE_API_BASE`（酷狗为 `VITE_KUGOU_API_BASE`，QQ 音乐为 `VITE_QQ_API_BASE`）要填成用户的设备能访问到的 API 地址，例如你部署好的 `https://api.example.com`，不能是 `localhost` 或 `127.0.0.1`：那指的是用户自己的手机或电脑。",
+        "这些变量在构建时写入前端，修改后必须重新构建并部署；打包进 App 的要重新打包。",
+        "如果只是想直接使用，推荐下载 Electron 桌面版：桌面版内置了这些服务，不需要额外部署。"
+      ]
+    },
+    {
+      "id": "web-api-unreachable",
+      "providers": [],
+      "title": "网页版连不上部署的 API 服务",
+      "symptoms": "网页版（user agent 不含 Electron，或 runtime: web），扫码一开始就 start:error，报 TypeError Failed to fetch / NetworkError / Load failed；或自检 verdict 为 remote-unreachable。",
+      "match": [
+        "verdict: remote-unreachable",
+        ["start:error[^\\n]*(?:Failed to fetch|NetworkError|Load failed)", "^user agent: (?![^\\n]*Electron/)"]
+      ],
+      "steps": [
+        "确认 API 服务本身在运行：在浏览器里直接打开你配置的 API 地址，应当能返回内容，而不是报错或超时。",
+        "Folia 页面是 https 时，API 地址也必须是 https，否则浏览器会拦截混合内容请求。",
+        "API 服务需要允许 Folia 所在域名的跨域请求（CORS）。",
+        "用最新版的 Folia 重新构建部署后再试。"
+      ]
+    },
+    {
+      "id": "network-reset",
+      "providers": [],
+      "title": "到平台服务器的连接被网络环境中断",
+      "symptoms": "登录请求出现 ECONNRESET / socket hang up（常见为 rejected status=502 msg=\"read ECONNRESET\"），随后报 code 404 等；或自检 verdict 为 tls-reset / upstream-unreachable / https-failed。",
+      "match": ["verdict: (?:tls-reset|upstream-unreachable|https-failed)", "rejected status=502[^\\n]*ECONNRESET"],
+      "steps": [
+        "换一个网络（例如手机热点），然后完全退出并重启 Folia，再重新扫码。",
+        "关闭代理、加速器或 VPN；使用 TUN 模式代理时，让平台域名（如 `music.163.com`、`y.qq.com`、`kugou.com`）直连。",
+        "检查防火墙或安全软件是否拦截了 Folia 的网络连接。"
+      ]
+    },
+    {
+      "id": "dns-failed",
+      "providers": [],
+      "title": "无法解析平台服务器的域名",
+      "symptoms": "自检 verdict 为 dns-failed，或 dns 行报 ENOTFOUND / EAI_AGAIN。",
+      "match": ["verdict: dns-failed"],
+      "steps": [
+        "检查网络连接是否正常，或把系统 DNS 换成公共 DNS（例如 `223.5.5.5`、`119.29.29.29`）。",
+        "换一个网络后，完全退出并重启 Folia 再扫码。"
+      ]
+    },
+    {
+      "id": "ipv6-failed",
+      "providers": [],
+      "title": "IPv6 连接失败（IPv4 正常）",
+      "symptoms": "自检 verdict 为 ipv6-failed：同一域名 IPv4 握手正常、IPv6 握手失败；常见于 Teredo 等隧道网卡。",
+      "match": ["verdict: ipv6-failed"],
+      "steps": [
+        "在系统网络设置里关闭 IPv6；Windows 上也可以用管理员终端运行 `netsh interface teredo set state disabled` 关闭 Teredo。",
+        "完全退出并重启 Folia 后再扫码。"
+      ]
+    },
+    {
+      "id": "proxy-interference",
+      "providers": [],
+      "title": "代理接管了登录请求",
+      "symptoms": "自检 verdict 行带 proxy: fake-ip 或 proxy: env，dns 行带 [fake-ip]，或 proxy 行里有 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY 环境变量。仅系统代理（system 非 DIRECT）不影响内置服务。",
+      "match": ["; proxy: (?:fake-ip|env)\\b", "\\[fake-ip\\]"],
+      "steps": [
+        "使用 TUN 模式（fake-ip）的代理时，在代理规则里让平台域名直连，或暂时关闭代理。",
+        "去掉 `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY` 等代理环境变量后重启 Folia。"
+      ]
+    },
+    {
+      "id": "clock-skew",
+      "providers": [],
+      "title": "系统时间不准",
+      "symptoms": "自检 verdict 为 clock-skew，或 https 行的 clock skew 超过 5 分钟。几十秒以内的偏差没有影响。",
+      "match": ["verdict: clock-skew"],
+      "steps": [
+        "在系统设置里打开「自动设置时间」并立即同步一次。",
+        "完全退出并重启 Folia 后再扫码。"
+      ]
+    },
+    {
+      "id": "backend-down",
+      "providers": [],
+      "title": "Folia 内置的本地服务没有正常运行",
+      "symptoms": "桌面版自检 verdict 为 backend-down，或 backend 行状态不是 running、GET / 失败，或启动步骤（startup runs）里有失败项。",
+      "match": ["verdict: backend-down"],
+      "steps": [
+        "完全退出 Folia（包括托盘图标）后重新打开，再扫码。",
+        "检查安全软件是否拦截了 Folia 监听本机端口（`127.0.0.1`）。",
+        "仍然失败的话，重新安装最新版本的 Folia。"
+      ]
+    },
+    {
+      "id": "credential-store",
+      "providers": ["qq"],
+      "title": "系统钥匙串不可用，登录态无法加密保存",
+      "symptoms": "自检 verdict 为 credential-store，或 credential store 行显示 encryption=no / backend=basic_text，多见于 Linux。",
+      "match": ["verdict: credential-store"],
+      "steps": [
+        "Linux 上请安装并解锁 GNOME Keyring 或 KWallet。",
+        "完全退出并重启 Folia 后再扫码。"
+      ]
+    },
+    {
+      "id": "rate-limited",
+      "providers": [],
+      "title": "请求过于频繁，被平台限流",
+      "symptoms": "报错里出现 HTTP 429 / request failed: 429 / status=429。",
+      "match": ["\\b(?:request failed|HTTP|status)[:= ]+429\\b"],
+      "steps": [
+        "等待 10 到 30 分钟再试，期间不要反复刷新二维码。",
+        "仍然失败的话，换一个网络后重启 Folia 再扫码。"
+      ]
+    },
+    {
+      "id": "report-incomplete",
+      "providers": [],
+      "title": "诊断报告信息不完整",
+      "symptoms": "报告缺少 self-check 段，且 provider details 为 (none)，通常是旧版本 Folia 生成的报告，无法判断具体原因。",
+      "match": [],
+      "steps": [
+        "升级到最新版本的 Folia，重新扫码。",
+        "如果仍然失败，在登录框的「还是不行？」里复制新的诊断报告，回复到本 issue。"
+      ]
+    }
+  ]
+}

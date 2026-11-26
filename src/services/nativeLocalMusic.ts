@@ -2,7 +2,7 @@ import type { LocalSong } from '../types';
 import { saveLocalSongs } from './db';
 import { buildImportedMetadataSnapshot } from '../utils/localSongMetadata';
 import { parseEmbeddedMetadataAsync } from '../utils/localMetadataWorkerClient';
-import { stageLocalCoverAsset } from './localCoverAssetService';
+import { stageLocalCoverAsset, prepareLocalSongsCoverAssets } from './localCoverAssetService';
 import { noteLibraryStep } from '../nativeBridge/api/libraryTrace.js';
 
 // src/services/nativeLocalMusic.ts
@@ -79,6 +79,18 @@ type NativePlugin = {
 
 export const ANDROID_MEDIA_FOLDER_NAME = 'Android 本地音乐';
 export const ANDROID_IMPORTED_FOLDER_NAME = 'Android 文件导入';
+
+/**
+ * 超过这个大小的文件不在渲染进程里整首读进来解析内嵌标签。
+ *
+ * 导入时每个文件都会被 `fetch` 成 Blob 再交给 worker 解析，一首 60 MB 的无损会同时存在
+ * 原文与解码后的两份；一批几十首连着来，低内存设备在导入过程中就会闪退。
+ * 大文件直接跳过解析，用文件名作标题 —— 歌照常可播，只是少了内嵌的标题/封面。
+ */
+const METADATA_PARSE_MAX_BYTES = 16 * 1024 * 1024;
+
+/** 让出一帧：连续几十次 fetch + 解析会把主线程占满，进度界面看起来像卡死。 */
+const yieldToUi = () => new Promise<void>(resolve => { setTimeout(resolve, 0); });
 
 export const isAndroidNativeRuntime = (): boolean => (
     typeof window !== 'undefined'
@@ -285,6 +297,20 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
         throw error;
     }
 
+    // 有些机型的文件管理器不支持「选择整个文件夹」（ColorOS 会回一个普通文档 URI）：
+    // 自动改开可多选的文件选择器，而不是把用户挡在一句「不支持」上。
+    if (response.error === 'tree-unsupported' && plugin?.pickAudioFiles) {
+        noteLibraryStep('local', 'pick:tree-unsupported-fallback');
+        try {
+            response = await plugin.pickAudioFiles();
+        } catch (error) {
+            noteLibraryStep('local', 'pick:fallback-error', {
+                message: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+        }
+    }
+
     const failures = Array.isArray(response.failures) ? response.failures : [];
     noteLibraryStep('local', 'pick:result', {
         cancelled: response.cancelled === true,
@@ -309,15 +335,19 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
         const fallbackTitle = titleFromFileName(fileName);
         let metadata: Awaited<ReturnType<typeof parseEmbeddedMetadataAsync>> = null;
         let metadataError: string | undefined;
-        try {
-            // 回环地址是跨源的，LocalAudioServer 那边带 `Access-Control-Allow-Origin: *`。
-            const blob = await (await fetch(track.url)).blob();
-            metadata = await parseEmbeddedMetadataAsync(new File([blob], fileName, {
-                type: track.mimeType || 'audio/*',
-            }), true);
-        } catch (error) {
-            metadataError = error instanceof Error ? error.message : String(error);
-            console.warn('[NativeLocalMusic] Failed to parse embedded metadata', fileName, error);
+        if (Number(track.fileSize) > METADATA_PARSE_MAX_BYTES) {
+            metadataError = 'skipped: file too large';
+        } else {
+            try {
+                // 回环地址是跨源的，LocalAudioServer 那边带 `Access-Control-Allow-Origin: *`。
+                const blob = await (await fetch(track.url)).blob();
+                metadata = await parseEmbeddedMetadataAsync(new File([blob], fileName, {
+                    type: track.mimeType || 'audio/*',
+                }), true);
+            } catch (error) {
+                metadataError = error instanceof Error ? error.message : String(error);
+                console.warn('[NativeLocalMusic] Failed to parse embedded metadata', fileName, error);
+            }
         }
         noteLibraryStep('local', 'pick:track', {
             fileName,
@@ -339,7 +369,7 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
         } catch (coverError) {
             console.warn('[NativeLocalMusic] Failed to stage embedded cover', fileName, coverError);
         }
-        songs.push({
+        let song: LocalSong = {
             id: `android-imported-${track.id}`,
             fileName,
             filePath: `Android/Imported/${track.id}`,
@@ -366,7 +396,23 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
             folderName: ANDROID_IMPORTED_FOLDER_NAME,
             hasManualLyricSelection: false,
             noAutoMatch: false,
-        });
+        };
+
+        if (song.localCoverAssetId) {
+            // 每首的封面立刻写进二进制存储，再从暂存队列里删掉。
+            //
+            // 原来的保存发生在整批导入结束之后：先 stage 的封面会一直留在内存里的
+            // pendingPayloads 里，导入几十首（每首封面 1–3 MB）就足以把低内存设备撑到闪退。
+            try {
+                const [prepared] = await prepareLocalSongsCoverAssets([song]);
+                if (prepared) song = prepared;
+            } catch (coverError) {
+                console.warn('[NativeLocalMusic] Failed to persist cover early', fileName, coverError);
+            }
+        }
+
+        songs.push(song);
+        await yieldToUi();
     }
 
     if (songs.length > 0) {

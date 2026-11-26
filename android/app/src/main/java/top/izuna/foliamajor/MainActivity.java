@@ -39,6 +39,9 @@ public class MainActivity extends BridgeActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         Bridge bridge = getBridge();
         if (bridge != null && bridge.getWebView() != null) {
+            // 换掉 WebView 的文件选择器：图片输入框不再进系统相册选择器（「仅可访问所选的照片和视频」），
+            // 改由 SAF 打开完整文件管理器，不需要任何相册/存储权限。
+            bridge.getWebView().setWebChromeClient(new SafFileChooserClient(bridge));
             WebSettings ws = bridge.getWebView().getSettings();
             ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
             ws.setUseWideViewPort(true);
@@ -49,8 +52,12 @@ public class MainActivity extends BridgeActivity {
         }
         applyFullscreen();
         applyCutoutMode();
+        // 挖孔/刘海适配是设备固有特征，不跟「手机适配」开关绑定：启动就铺一次，
+        // 否则在那些把状态栏高度垫成窗口顶部内边距的机型上，页面顶部会空出一条刘海高的带子。
+        PhoneFitCutout.apply(this);
         getWindow().getDecorView().postDelayed(this::applyFullscreen, 500);
         getWindow().getDecorView().postDelayed(this::applyCutoutMode, 500);
+        getWindow().getDecorView().postDelayed(() -> PhoneFitCutout.apply(this), 500);
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
             if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) applyFullscreen();
         });
@@ -73,6 +80,20 @@ public class MainActivity extends BridgeActivity {
         if (hasFocus) {
             applyFullscreen();
             applyCutoutMode();
+            // 回前台、系统栏临时划出后再回来时，有的 ROM 会把 inset 重新垫回内容根，
+            // 这里再铺一次，顶部那条刘海高的空带就不会反弹。
+            PhoneFitCutout.apply(this);
+            logCutoutSnapshot();
+        }
+    }
+
+    /** 顶部/底部还残留多少空白：一条日志，方便用户报「不全屏」时直接看出是窗口还是内容被顶下来。 */
+    private void logCutoutSnapshot() {
+        try {
+            org.json.JSONObject cutout = PhoneFitCutout.describe(this);
+            android.util.Log.i("FoliaFullscreen", "cutout " + cutout);
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaFullscreen", "describe failed", error);
         }
     }
 

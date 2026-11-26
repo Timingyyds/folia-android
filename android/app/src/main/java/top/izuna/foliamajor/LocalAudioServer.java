@@ -58,6 +58,16 @@ final class LocalAudioServer {
     private static final String IMPORTED_PREFIX = "imported-";
     /** 直接按绝对路径流原文件的 ref 前缀（文件系统兜底扫描出来的歌，不复制进私有目录）。 */
     private static final String FILE_PREFIX = "file-";
+    /** 在线壁纸：私有目录里的视频/图片，按文件名流回去。 */
+    private static final String WALLPAPER_PATH_PREFIX = "/wallpaper/";
+    private static final String WALLPAPER_DIR = "wallpapers";
+    /** 在线壁纸的缩略图代理：站点要求 Referer，WebView 的 <img> 给不了。 */
+    private static final String WALLPAPER_THUMB_PATH_PREFIX = "/wallpaper-thumb/";
+    private static final String[] WALLPAPER_THUMB_HOST_SUFFIXES = {
+        "moewalls.com", "bizhihui.com", "doubaocdn.com", "panlai.com"
+    };
+    /** 缩略图上限：只是列表上的小图，超过这个数说明拿到的不是图片。 */
+    private static final long WALLPAPER_THUMB_MAX_BYTES = 8L * 1024 * 1024;
     /*
      * 只能代哪些主机的远端音频。
      *
@@ -413,6 +423,13 @@ final class LocalAudioServer {
         return dir;
     }
 
+    /** 在线壁纸（视频/图片）的存放位置：应用私有目录，卸载才清。 */
+    File wallpaperDirectory() {
+        File dir = new File(context.getFilesDir(), WALLPAPER_DIR);
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
     private void handle(Socket socket) {
         try (Socket client = socket;
              BufferedInputStream input = new BufferedInputStream(client.getInputStream());
@@ -463,6 +480,14 @@ final class LocalAudioServer {
             }
             if (path.startsWith(REMOTE_AUDIO_PATH_PREFIX)) {
                 streamRemoteAudio(output, requestParts, headers, path.substring(REMOTE_AUDIO_PATH_PREFIX.length()));
+                return;
+            }
+            if (path.startsWith(WALLPAPER_THUMB_PATH_PREFIX)) {
+                streamWallpaperThumb(output, requestParts, path.substring(WALLPAPER_THUMB_PATH_PREFIX.length()));
+                return;
+            }
+            if (path.startsWith(WALLPAPER_PATH_PREFIX)) {
+                streamWallpaper(output, requestParts, headers, path.substring(WALLPAPER_PATH_PREFIX.length()));
                 return;
             }
             if (!path.startsWith(AUDIO_PATH_PREFIX)) {
@@ -550,6 +575,130 @@ final class LocalAudioServer {
             guessMimeType(fileName),
             () -> new FileInputStream(target)
         );
+    }
+
+    /**
+     * 按文件名流一张在线壁纸（视频或图片）。
+     *
+     * 和 imported-audio 一样只认私有目录里的一层文件名：这个服务监听在 127.0.0.1 上，
+     * 设备上任何应用都能连，名字来自 URL，必须挡掉路径穿越。
+     */
+    private void streamWallpaper(
+        BufferedOutputStream output,
+        String[] requestParts,
+        Map<String, String> headers,
+        String fileName
+    ) throws IOException {
+        if (fileName.contains("/") || fileName.contains("\\") || fileName.contains("..")) {
+            Log.w(TAG, "wallpaper refused: " + fileName);
+            writeStatus(output, 404, "Not Found");
+            return;
+        }
+        File target = new File(wallpaperDirectory(), fileName);
+        if (!target.isFile()) {
+            Log.w(TAG, "wallpaper missing: " + fileName);
+            writeStatus(output, 404, "Not Found");
+            return;
+        }
+        writeResponse(
+            output,
+            requestParts,
+            headers,
+            target.length(),
+            guessWallpaperMime(fileName),
+            () -> new FileInputStream(target)
+        );
+    }
+
+    /**
+     * 代取在线壁纸的缩略图。
+     *
+     * 两个壁纸站的图片都按 Referer 防盗链，而 WebView 里的 <img> 加不了请求头 ——
+     * 直连的结果就是整页卡片「没有图」。这里由原生带 UA/Referer 取回来再以同源地址喂给页面。
+     * 只放行壁纸站与它们的图床，避免这个名字变成一个任取全网的代理。
+     */
+    private void streamWallpaperThumb(BufferedOutputStream output, String[] requestParts, String encodedUrl) throws IOException {
+        String raw;
+        try {
+            raw = URLDecoder.decode(encodedUrl, "UTF-8");
+        } catch (Exception error) {
+            writeStatus(output, 400, "Bad Request");
+            return;
+        }
+        URL url;
+        try {
+            url = new URL(raw);
+        } catch (Exception error) {
+            writeStatus(output, 400, "Bad Request");
+            return;
+        }
+        String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+        boolean allowed = false;
+        for (String suffix : WALLPAPER_THUMB_HOST_SUFFIXES) {
+            if (host.equals(suffix) || host.endsWith("." + suffix)) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed || !("http".equals(url.getProtocol()) || "https".equals(url.getProtocol()))) {
+            Log.w(TAG, "wallpaper thumb refused: " + host);
+            writeStatus(output, 404, "Not Found");
+            return;
+        }
+
+        boolean moewalls = host.endsWith("moewalls.com");
+        Request request = new Request.Builder()
+            .url(raw)
+            .header("User-Agent", REMOTE_AUDIO_USER_AGENT)
+            .header("Referer", moewalls ? "https://moewalls.com/" : "https://www.bizhihui.com/")
+            .header("Accept", "image/avif,image/webp,image/*,*/*;q=0.8")
+            .build();
+        Response response = remoteAudioClient.newCall(request).execute();
+        try {
+            ResponseBody body = response.body();
+            if (!response.isSuccessful() || body == null) {
+                Log.w(TAG, "wallpaper thumb upstream " + response.code() + " for " + host);
+                writeStatus(output, 502, "Upstream Error");
+                return;
+            }
+            if (body.contentLength() > WALLPAPER_THUMB_MAX_BYTES) {
+                writeStatus(output, 413, "Too Large");
+                return;
+            }
+            byte[] bytes = body.bytes();
+            if (bytes.length == 0 || bytes.length > WALLPAPER_THUMB_MAX_BYTES) {
+                writeStatus(output, 404, "Not Found");
+                return;
+            }
+            String contentType = body.contentType() == null ? "image/jpeg" : body.contentType().toString();
+            StringBuilder header = new StringBuilder();
+            header.append("HTTP/1.1 200 OK\r\n");
+            header.append("Content-Type: ").append(contentType).append("\r\n");
+            header.append("Content-Length: ").append(bytes.length).append("\r\n");
+            header.append("Access-Control-Allow-Origin: *\r\n");
+            header.append("Cache-Control: max-age=86400\r\n");
+            header.append("Connection: close\r\n\r\n");
+            output.write(header.toString().getBytes(StandardCharsets.US_ASCII));
+            if (!"HEAD".equals(requestParts[0])) output.write(bytes);
+            output.flush();
+        } finally {
+            response.close();
+        }
+    }
+
+    /** 壁纸按扩展名给 Content-Type：WebView 只认这几个媒体类型。 */
+    static String guessWallpaperMime(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".webm")) return "video/webm";
+        if (lower.endsWith(".mov")) return "video/quicktime";
+        if (lower.endsWith(".mkv")) return "video/x-matroska";
+        if (lower.endsWith(".mp4") || lower.endsWith(".m4v")) return "video/mp4";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".avif")) return "image/avif";
+        if (lower.endsWith(".bmp")) return "image/bmp";
+        return "image/jpeg";
     }
 
     /**

@@ -41,6 +41,8 @@ import {
     resolveObsBrowserSourceCoverUrl,
     resolveObsBrowserSourceImageAsset,
     resolveObsBrowserSourceImageAssets,
+    resolvePublishedObsCoverUrl,
+    type ObsInlinedCover,
 } from '../utils/obsBrowserSource';
 import type { TemperaLayerImage } from '../types';
 import { loadTemperaLayerImageBlobs } from '../services/temperaLayerImages';
@@ -58,6 +60,9 @@ import { useVisualizerTunings } from '../components/visualizer/useVisualizerTuni
 import { useVisualizerBackgroundConfig } from '../components/visualizer/useVisualizerBackgroundConfig';
 import { usePlayerChromeSettingsStore } from '../stores/usePlayerChromeSettingsStore';
 import { getObservedMedia } from '../services/hifi/hifiMediaShim';
+import { useStageSettingsStore } from '../stores/useStageSettingsStore';
+import { resolveObsNowPlayingCard } from '../utils/obsNowPlayingCard';
+import { useTranslation } from 'react-i18next';
 
 // src/hooks/useObsBrowserSourcePublisher.ts
 // Publishes the single playback surface to the local OBS browser source.
@@ -166,12 +171,24 @@ export const useObsBrowserSourcePublisher = ({
     const cappellaCustomEmojiImages = useVisualizerAssetStore(state => state.cappellaCustomEmojiImages);
     const cappellaCustomAvatarImages = useVisualizerAssetStore(state => state.cappellaCustomAvatarImages);
     const monetPortraitImage = useVisualizerAssetStore(state => state.monetPortraitImage);
+    const { i18n } = useTranslation();
+    const language = i18n.resolvedLanguage ?? i18n.language;
+    const stageTrackPillInObs = useStageSettingsStore(state => state.stageTrackPillInObs);
+    const stageTrackPillMode = useStageSettingsStore(state => state.stageTrackPillMode);
+    const stageTrackPillTimeoutSec = useStageSettingsStore(state => state.stageTrackPillTimeoutSec);
+    const stageTrackPillPosition = useStageSettingsStore(state => state.stageTrackPillPosition);
+    const nowPlayingCard = useMemo(() => resolveObsNowPlayingCard({
+        inObs: stageTrackPillInObs,
+        mode: stageTrackPillMode,
+        timeoutSec: stageTrackPillTimeoutSec,
+        position: stageTrackPillPosition,
+    }), [stageTrackPillInObs, stageTrackPillMode, stageTrackPillTimeoutSec, stageTrackPillPosition]);
 
     // The pool rides in the tuning bundle that is already published; only the files are missing
     // on the overlay side, and those are resolved below.
     const temperaLayerImages = visualizerTunings?.tempera?.layerImages;
     const [status, setStatus] = useState<ObsBrowserSourceStatus>(() => emptyObsStatus());
-    const [obsCoverUrl, setObsCoverUrl] = useState<string | null>(coverUrl);
+    const [inlinedCover, setInlinedCover] = useState<ObsInlinedCover | null>(null);
     const [obsCustomImages, setObsCustomImages] = useState<{
         cappellaEmoji: CappellaEmojiImage[];
         cappellaAvatar: CappellaAvatarImage[];
@@ -202,32 +219,30 @@ export const useObsBrowserSourcePublisher = ({
         });
     }, [refreshStatus]);
 
+    // A blob: cover is read into a data URL only while the source is on. Off, nothing is published,
+    // and reading every blob: cover here set this hook's state twice a song change - two renders
+    // of the whole app - for a config nobody received.
+    const inlinesCover = status.enabled && isObsBrowserSourceBlobCoverUrl(coverUrl);
     useEffect(() => {
-        let cancelled = false;
-
-        if (!isObsBrowserSourceBlobCoverUrl(coverUrl)) {
-            setObsCoverUrl(coverUrl);
-            return () => {
-                cancelled = true;
-            };
+        if (!inlinesCover || !coverUrl) {
+            return;
         }
 
-        setObsCoverUrl(null);
-        void resolveObsBrowserSourceCoverUrl(coverUrl).then(nextCoverUrl => {
+        let cancelled = false;
+        void resolveObsBrowserSourceCoverUrl(coverUrl).then(url => {
             if (!cancelled) {
-                setObsCoverUrl(nextCoverUrl);
+                setInlinedCover({ source: coverUrl, url });
             }
         }).catch(error => {
+            // Nothing is set: with no copy made from this cover the overlay is given none.
             console.warn('[OBS] Failed to resolve blob cover for browser source', error);
-            if (!cancelled) {
-                setObsCoverUrl(null);
-            }
         });
 
         return () => {
             cancelled = true;
         };
-    }, [coverUrl]);
+    }, [coverUrl, inlinesCover]);
+    const obsCoverUrl = resolvePublishedObsCoverUrl(coverUrl, inlinedCover);
 
     useEffect(() => {
         let cancelled = false;
@@ -298,10 +313,14 @@ export const useObsBrowserSourcePublisher = ({
             cappellaCustomAvatarImages: obsCustomImages.cappellaAvatar,
             monetPortraitImage: obsCustomImages.monetPortrait,
             temperaLayerImageAssets: obsCustomImages.temperaLayer,
+            nowPlayingCard,
+            language,
             updatedAt: Date.now(),
         };
     }, [
         activePlaybackContext,
+        nowPlayingCard,
+        language,
         background,
         currentSong,
         hideTranslationSubtitle,

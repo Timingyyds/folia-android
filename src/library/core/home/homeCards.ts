@@ -118,6 +118,11 @@ export const isPersonalFmCard = (card: Pick<LibraryHomeCard, 'id' | 'raw'>): boo
     card.id === PERSONAL_FM_CARD_ID || (card.raw as { id?: unknown } | undefined)?.id === PERSONAL_FM_CARD_ID
 );
 
+/** 这张卡是 provider 的额外电台（卡片带 personalFm.station）：和私人 FM 一样直接播放，但不是私人 FM 本身。 */
+export const isStationCard = (card: Pick<LibraryHomeCard, 'raw'>): boolean => (
+    Boolean((card.raw as ProviderCollection | undefined)?.personalFm?.station)
+);
+
 /** 打开在线卡片时交给集合描述工厂的对象：来源对象带上卡片的类型（电台里的推荐歌单记作 playlist）。 */
 export const onlineCardCollection = (card: LibraryHomeCard): Record<string, unknown> => (
     card.raw

@@ -3,7 +3,7 @@ import { getPlaybackSongKey, getPlaybackSourceRef } from '../../utils/appPlaybac
 
 // src/services/onlineMusic/resourceKeys.ts
 
-export type SongResourceKind = 'audio' | 'lyric' | 'cover' | 'theme' | 'replayGain';
+export type SongResourceKind = 'audio' | 'lyric' | 'cover' | 'replayGain';
 
 /**
  * 歌词缓存要带「当时用的是哪个歌词源」。

@@ -4,11 +4,13 @@ import {
     type AudioQualityPreference,
     type ChorusRange,
     type JsonValue,
+    type ListeningRankRange,
     type MediaId,
     type OnlineMusicProvider,
     type ProviderCatalogRef,
     type ProviderCollection,
     type ProviderHistoryEntry,
+    type ProviderLyricSearchAlias,
     type ProviderPage,
     type ProviderUser,
 } from '../../../types/onlineMusic';
@@ -36,6 +38,7 @@ import { resolveKugouPublicPlayUrl } from './kugouPublic';
 import { describeKugouLoginFailure, kugouCheckFailure } from './kugouLoginFailure';
 import { describeKugouFailure, isKugouTimeout, kugouNoUrlError } from './kugouFailure';
 import { errorFields } from '../../../utils/errorText';
+import { LISTENING_RANK_RANGES, listeningRankCollection, listeningRankPage, withListenCount } from '../listeningRank';
 
 // src/services/onlineMusic/kugou/kugouProvider.ts
 
@@ -281,6 +284,21 @@ export const normalizeKugouSong = (raw: unknown): UnifiedSong => {
     ) ?? valueOf(audioInfo, 'ori_audio_name', 'oriAudioName', 'audio_name', 'audioName')
         ?? valueOf(base, 'SongName', 'songname', 'songName', 'audio_name', 'audioName') ?? '');
     const { title, artists } = normalizeKugouTitleAndArtists(rawTitle, rawArtists);
+    // 歌名可能带着后缀（括号里的译名或版本）：专辑曲目的 `base.audio_name` 是「夜に駆ける (向夜晚奔去)」，
+    // 后缀另在 `trans_param.songname_suffix`；搜索条目的后缀在 `Suffix`，原名在 `OriSongName`
+    // （2026-11-05 实测）。去掉后缀的原名和显示的歌名不同时存下，歌词搜索在歌名搜不到时用它再搜一次。
+    const suffix = String(
+        valueOf(item, 'Suffix', 'suffix')
+        ?? valueOf(item?.trans_param ?? item?.transParam, 'songname_suffix')
+        ?? valueOf(audioInfo?.trans_param ?? audioInfo?.transParam, 'songname_suffix')
+        ?? '',
+    ).trim();
+    const originalName = String(
+        valueOf(item, 'OriSongName', 'ori_song_name', 'oriSongName')
+        ?? valueOf(base, 'OriSongName', 'ori_song_name', 'oriSongName')
+        ?? (suffix && title.endsWith(suffix) ? title.slice(0, -suffix.length) : ''),
+    ).trim();
+    if (originalName && originalName !== title) providerData.originalName = originalName;
 
     const album = {
         id: albumId,
@@ -300,8 +318,18 @@ export const normalizeKugouSong = (raw: unknown): UnifiedSong => {
     };
 };
 
-/** 取播放地址整条链的总预算，ms。超了就停手报错，别让界面一直转。 */
-const KUGOU_SONG_URL_CHAIN_BUDGET_MS = 25_000;
+// 歌名的原名（normalizeKugouSong 存下的 `OriSongName`，或去掉后缀的歌名）配上同一组歌手，供歌词搜索换个名字再搜。
+const getKugouLyricSearchAlias = async (song: SongResult): Promise<ProviderLyricSearchAlias | null> => {
+    const sourceRef = song.sourceRef?.kind === 'online' && song.sourceRef.providerId === 'kugou' ? song.sourceRef : undefined;
+    const originalName = String(sourceRef?.providerData?.originalName ?? '').trim();
+    if (!originalName || originalName === song.name) return null;
+    return {
+        song,
+        title: originalName,
+        artist: song.artists.map(artist => artist.name).join(', '),
+        ...(song.album?.name ? { album: song.album.name } : {}),
+    };
+};
 
 const KUGOU_RECOMMENDATION_PAGE_SIZE = 30;
 const KUGOU_MAX_PAGE_SIZE = 100;
@@ -675,6 +703,56 @@ const normalizeKugouSearchSongs = (rawItems: any[]): UnifiedSong[] => {
         });
 };
 
+// 搜专辑（`/search?type=album`）和歌单（`type=special`）。2026-10-31 实测两种不带账号也有结果，条目在 data.lists：
+// 专辑给 albumid / albumname / singers / img / publish_time / songcount，歌单给 specialid / specialname / gid /
+// nickname / img / song_count / total_play_count。歌单按 gid（global_collection_id）读歌（`/playlist/track/all`），
+// specialid 读不出来，所以把 gid 当成 global_collection_id 交给 normalizeCollection。
+const searchKugouCollections = async (
+    kind: 'album' | 'playlist',
+    query: string,
+    limit: number,
+    offset: number,
+): Promise<ProviderPage<ProviderCollection>> => {
+    if (!query.trim()) return { items: [], hasMore: false, nextOffset: offset };
+    const page = Math.floor(offset / limit) + 1;
+    const response = await requestKugou('search', {
+        keywords: query, keyword: query, type: kind === 'album' ? 'album' : 'special', page, pagesize: limit,
+    });
+    const rawItems = listOf(response);
+    const items = rawItems.flatMap((raw: any): ProviderCollection[] => {
+        const collection = kind === 'album'
+            ? normalizeCollection({ ...raw, album_id: raw?.albumid, album_name: raw?.albumname, song_count: raw?.songcount }, 'album')
+            : normalizeCollection({ ...raw, global_collection_id: raw?.gid, play_count: raw?.total_play_count ?? raw?.play_count }, 'playlist');
+        if (collection.id === '') return [];
+        // 歌单的创建者只有一个昵称（nickname / suid），normalizeCollection 不读它。
+        const nickname = kind === 'playlist' && typeof raw?.nickname === 'string' ? raw.nickname.trim() : '';
+        return [nickname ? { ...collection, creator: { id: raw?.suid ?? '', nickname } } : collection];
+    });
+    const paged = pageOfWithRawItemCount(items, response, limit, offset, rawItems.length);
+    // 按页码翻：一页不满 limit 条时，offset + 条数会让下一次又落回这一页。
+    return { ...paged, hasMore: paged.hasMore && rawItems.length > 0, nextOffset: rawItems.length > 0 ? page * limit : offset };
+};
+
+// 首页带凭据搜索空、匿名有结果后，后续页仍会走带凭据搜索；记住关键词，别让列表断在第一页。
+// 首页带凭据搜索重新有结果时再忘掉它；上限只防长期运行累积，登出（含会话失效）时整组清掉。
+// 换号不另清：记录只在翻后续页时查，换号后新搜一个词的第一页照样先走带凭据搜索，记录跟着更新。
+const KUGOU_ANONYMOUS_SEARCH_FALLBACK_LIMIT = 100;
+const kugouAnonymousSearchFallbackKeywords = new Set<string>();
+
+const rememberKugouAnonymousSearchFallback = (keyword: string): void => {
+    kugouAnonymousSearchFallbackKeywords.delete(keyword);
+    kugouAnonymousSearchFallbackKeywords.add(keyword);
+    while (kugouAnonymousSearchFallbackKeywords.size > KUGOU_ANONYMOUS_SEARCH_FALLBACK_LIMIT) {
+        const oldest = kugouAnonymousSearchFallbackKeywords.values().next().value;
+        if (oldest === undefined) break;
+        kugouAnonymousSearchFallbackKeywords.delete(oldest);
+    }
+};
+
+const forgetKugouAnonymousSearchFallback = (keyword: string): void => {
+    kugouAnonymousSearchFallbackKeywords.delete(keyword);
+};
+
 const qualityValue = (quality: AudioQualityPreference): string => ({
     standard: '128', high: '320', ultra: '320', lossless: 'flac', hires: 'high',
 })[quality];
@@ -959,6 +1037,9 @@ const getKugouTrackFileId = (track: MediaId | SongResult): string => {
 // 20000 首是保护上限，不是业务上限：到顶还有下一页就报错，不能把截断结果当成完整收藏列表存下去。
 const KUGOU_LIKED_TRACK_MAX_PAGES = 200;
 const KUGOU_LIKED_TRACK_CACHE_TTL_MS = 10_000;
+// 取播放链接整条链的总预算：每档音质都有多次尝试、扩展层内部还会并发几个来源，全部失败时
+// 不设上限就要等好几分钟（听感上就是点了没反应）。超过预算就跳过剩下的尝试。
+const KUGOU_SONG_URL_CHAIN_BUDGET_MS = 12_000;
 const kugouLikedTrackCache = new Map<string, { fetchedAt: number; songs: UnifiedSong[] }>();
 
 // KuGou's playlist entry `fileid` is local to one playlist, unlike the global audio hash. The
@@ -1050,17 +1131,39 @@ const getKugouHistoryName = async (date: string): Promise<string> => {
     return kugouHistoryNameByDate.get(date) || date;
 };
 
+// `/user/listen`'s type a span (docs/ku-go-api-docs.md): 0 is the last week, 1 all time, each the top 120.
+const KUGOU_LISTENING_RANK_TYPES: Record<ListeningRankRange, 0 | 1> = { week: 0, all: 1 };
+
+/**
+ * A user's listening ranking over a span, in KuGou's order; without a user, the signed-in account's.
+ * The answer is `data.lists` beside `total_week` / `total_history` (read 2026-11-03, an account with
+ * none). A row is a song with its play count in `listen_count`: seen by another client of the same
+ * module on a real account, not yet by us.
+ */
+const readKugouListeningRank = async (range: ListeningRankRange, userId?: MediaId): Promise<UnifiedSong[]> => {
+    const response = await requestKugou('user_listen', {
+        userid: (userId === undefined || userId === null ? '' : String(userId)) || getKugouUserId() || undefined,
+        type: KUGOU_LISTENING_RANK_TYPES[range],
+    });
+    const rows = dataOf(response)?.lists;
+    if (!Array.isArray(rows)) throw new OnlineProviderError('invalid-response', 'KuGou returned no listening ranking (data.lists)', 'kugou');
+    return rows
+        .map((item: any) => withListenCount(normalizeKugouSong(item), item?.listen_count))
+        .filter(song => song.id);
+};
+
 export const kugouProvider: OnlineMusicProvider = {
     id: 'kugou',
     displayName: 'KuGou Music',
     shortName: '酷狗',
+    shortNameKey: 'onlineProviderName.kugou',
     mark: { letter: 'K', color: '#2563eb' },
     getAvailability: getKugouTransportAvailability,
     describeFailure: describeKugouFailure,
     capabilities: {
         search: true, playback: true, lyrics: true, auth: true, userLibrary: true,
         playlists: true, albums: true, artists: true, recommendations: true, mutations: true,
-        wordByWordLyrics: true, userCloud: true, historyRecommendations: true,
+        wordByWordLyrics: true, userCloud: true, listeningRank: true, historyRecommendations: true,
         playlistSubscription: true, playlistTrackMutations: true, likes: true, userAlbums: true,
     },
     normalizeSong: normalizeKugouSong,
@@ -1118,6 +1221,8 @@ export const kugouProvider: OnlineMusicProvider = {
                 return await anonymous();
             }
         },
+        searchAlbums: (query, limit, offset) => searchKugouCollections('album', query, limit, offset),
+        searchPlaylists: (query, limit, offset) => searchKugouCollections('playlist', query, limit, offset),
     },
     playback: {
         async getSongDetail(id) {
@@ -1315,7 +1420,8 @@ export const kugouProvider: OnlineMusicProvider = {
                             requestedQuality: quality,
                         });
                         return {
-                            url: legacyUrl,
+                            // CDN 支持 https；页面是 https://localhost，别让播放地址停在 http。
+                            url: legacyUrl.replace(/^http:/i, 'https:'),
                             fetchedAt: Date.now(),
                             quality: 'standard',
                         };
@@ -1345,6 +1451,7 @@ export const kugouProvider: OnlineMusicProvider = {
     lyrics: {
         getLyrics: getKugouLyrics,
         getChorusRanges: getKugouChorusRanges,
+        getSearchAlias: getKugouLyricSearchAlias,
     },
     auth: {
         getLoginTexts: () => ({ title: 'home.loginTitleKugou', note: 'home.loginNoteKugou' }),
@@ -1466,6 +1573,14 @@ export const kugouProvider: OnlineMusicProvider = {
         async getCloudCollection(user) {
             return { providerId: 'kugou', id: 'cloud', name: i18n.t('ui.cloudDrive'), type: 'cloud', coverUrl: user?.avatarUrl };
         },
+        async getListeningRankCollections(user) {
+            const ranked = await Promise.all(LISTENING_RANK_RANGES.map(async range => ({ range, songs: await readKugouListeningRank(range, user.id) })));
+            const entries = ranked
+                .filter(({ songs }) => songs.length > 0)
+                .map(({ range, songs }) => listeningRankCollection('kugou', user, range, songs));
+            console.info('[KugouProvider] Listening ranking read', { entries: entries.map(entry => `${entry.listeningRank}:${entry.trackCount}`) });
+            return entries;
+        },
     },
     catalog: {
         canResolveSongCatalogRefs: song => Boolean(getKugouCatalogLookupId(song)),
@@ -1477,6 +1592,9 @@ export const kugouProvider: OnlineMusicProvider = {
             const requestLimit = Math.min(Math.max(1, limit), KUGOU_MAX_PAGE_SIZE);
             const response = await requestKugou('playlist_track_all', { id: String(id), pagesize: requestLimit, page: Math.floor(offset / requestLimit) + 1 });
             return pageOf(listOf(response).map(normalizeKugouSong), response, requestLimit, offset);
+        },
+        async getListeningRankTracks(range, limit, offset, collection) {
+            return listeningRankPage(await readKugouListeningRank(range, collection?.creator?.id), limit, offset);
         },
         async getCloudTracks(limit, offset) {
             const requestLimit = Math.min(Math.max(1, limit), KUGOU_MAX_PAGE_SIZE);

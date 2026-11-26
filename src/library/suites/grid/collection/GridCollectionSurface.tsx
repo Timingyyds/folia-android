@@ -32,6 +32,8 @@ const GridCollectionSurface: React.FC<LibraryCollectionSurfaceProps> = ({
     const stayPlayback = useGridStayPlayback(playback.playTrack, playback);
     // 卡片上的专辑 / 歌手链接只在网格声明了 open-album / open-artist 时出现（声明 ∩ 曲目上能解析出的目录引用）。
     const declares = (action: LibraryActionId) => declaredActions.actions.includes(action);
+    // 速记簿：声明了、宿主也给了 collectTracks 才有入口；出处（改名后的集合名）由 GridView 补。
+    const collect = playback.collectTracks;
     const subtitle = (collection as any).creator?.nickname || (collection as any).artists?.[0]?.name || collection.description || '';
 
     return (
@@ -46,7 +48,12 @@ const GridCollectionSurface: React.FC<LibraryCollectionSurfaceProps> = ({
             trackPlaybackMark={stayPlayback.markFor}
             onAddTrackToQueue={playback.enqueueTrack}
             onPlayAll={playback.playAll}
+            onShufflePlayAll={declares('shuffle-scope') ? tracks => playback.playAll(tracks, { shuffle: true }) : undefined}
             onAddAllToQueue={playback.enqueueAll}
+            collectTrack={declares('collect') ? collect : undefined}
+            collectScope={declares('collect-scope') ? collect : undefined}
+            saveToPlaylist={declares('save-to-playlist') ? playback.pickPlaylistFor : undefined}
+            canSaveToPlaylist={playback.canPickPlaylistFor}
             onSelectAlbum={declares('open-album') ? onOpenAlbum : undefined}
             onSelectArtist={declares('open-artist') ? onOpenArtist : undefined}
             onStatusMessage={onStatusMessage}

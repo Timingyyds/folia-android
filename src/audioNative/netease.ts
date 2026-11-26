@@ -10,7 +10,7 @@ import {
   md5, parseCookieString, randomBase62, randomHex, rsaEncryptNoPadding,
   serializeCookieMap, toQueryString,
 } from './crypto';
-import { bridgeRequest, simpleResponse } from './core';
+import { bridgeRequest, extensionUnsupported, simpleResponse } from './core';
 import type { SimpleResponse } from './core';
 import { readProviderSessionValue, writeProviderSessionValue } from './sessionStore';
 const WEAPI_PRESET_KEY = '0CoJUm6Qyw8W8jud';

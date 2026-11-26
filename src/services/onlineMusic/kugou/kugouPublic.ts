@@ -17,6 +17,42 @@ const KUGOU_PUBLIC_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chro
 const KUGOU_PUBLIC_REFERER = 'https://www.kugou.com/';
 const KUGOU_TRACKER_KEY_SALT = 'kgcloudv2';
 
+/**
+ * 这两个公开端点只有 http（https 的 mobilecdn 直接不响应），而 WebView 页面是 https://localhost：
+ * 页面里的 fetch 打 http 属于「可拦截混合内容」，Chromium 一律拦掉 —— 安卓上匿名搜索与免费曲目取链接
+ * 因此从来没成功过，最后只剩下「登录或版权」那句话。原生桥（OkHttp）不受混合内容限制，安卓上走它。
+ */
+const requestPublicJson = async (target: URL): Promise<any> => {
+    const url = target.toString();
+    const headers = {
+        'User-Agent': KUGOU_PUBLIC_UA,
+        Referer: KUGOU_PUBLIC_REFERER,
+        Accept: 'application/json, text/plain, */*',
+    };
+    try {
+        const { bridgeRequest, isNativeBridgeAvailable } = await import('../../../audioNative/core');
+        if (isNativeBridgeAvailable()) {
+            const response = await bridgeRequest({ url, method: 'GET', headers, omitCookies: true, timeoutMs: 15_000 });
+            if (response.status < 200 || response.status >= 300) {
+                throw new OnlineProviderError('network', `KuGou public request failed: ${response.status}`, 'kugou');
+            }
+            try {
+                return JSON.parse(response.body ?? '');
+            } catch (error) {
+                throw new OnlineProviderError('invalid-response', 'KuGou public request returned an unreadable body', 'kugou', error);
+            }
+        }
+    } catch (error) {
+        if (error instanceof OnlineProviderError) throw error;
+        // 原生桥不可用（桌面 / 纯网页）：落到 fetch，同源或已放行混合内容的构建仍能工作。
+    }
+    const response = await fetch(url, { method: 'GET', credentials: 'omit', headers });
+    if (!response.ok) {
+        throw new OnlineProviderError('network', `KuGou public request failed: ${response.status}`, 'kugou');
+    }
+    return await response.json();
+};
+
 export type KugouPublicSearchAnswer = {
     status?: number;
     errcode?: number;
@@ -43,19 +79,7 @@ export const searchKugouPublic = async (
     target.searchParams.set('page', String(page));
     target.searchParams.set('pagesize', String(pagesize));
     target.searchParams.set('showtype', '1');
-    const response = await fetch(target.toString(), {
-        method: 'GET',
-        credentials: 'omit',
-        headers: {
-            'User-Agent': KUGOU_PUBLIC_UA,
-            Referer: KUGOU_PUBLIC_REFERER,
-            Accept: 'application/json, text/plain, */*',
-        },
-    });
-    if (!response.ok) {
-        throw new OnlineProviderError('network', `KuGou public search failed: ${response.status}`, 'kugou');
-    }
-    return await response.json() as KugouPublicSearchAnswer;
+    return await requestPublicJson(target) as KugouPublicSearchAnswer;
 };
 
 /**
@@ -76,19 +100,7 @@ export const resolveKugouPublicPlayUrl = async (
     target.searchParams.set('pid', '2');
     target.searchParams.set('cmd', '25');
     target.searchParams.set('behavior', 'play');
-    const response = await fetch(target.toString(), {
-        method: 'GET',
-        credentials: 'omit',
-        headers: {
-            'User-Agent': KUGOU_PUBLIC_UA,
-            Referer: KUGOU_PUBLIC_REFERER,
-            Accept: 'application/json, text/plain, */*',
-        },
-    });
-    if (!response.ok) {
-        throw new OnlineProviderError('network', `KuGou public play URL failed: ${response.status}`, 'kugou');
-    }
-    const body = await response.json() as {
+    const body = await requestPublicJson(target) as {
         status?: number;
         url?: string | string[];
         bitRate?: number;
@@ -96,7 +108,10 @@ export const resolveKugouPublicPlayUrl = async (
         error?: string;
     };
     const rawUrl = Array.isArray(body.url) ? body.url[0] : body.url;
-    const url = typeof rawUrl === 'string' && /^https?:\/\//i.test(rawUrl) ? rawUrl.split(',')[0]!.trim() : '';
+    const candidate = typeof rawUrl === 'string' && /^https?:\/\//i.test(rawUrl) ? rawUrl.split(',')[0]!.trim() : '';
+    // 酷狗给的地址是 http，而页面在 https://localhost 下：媒体虽属「可放行的混合内容」，
+    // 但 CDN 本身支持 https，直接换过去就不必指望这条放行规则。
+    const url = candidate.replace(/^http:/i, 'https:');
     return {
         url,
         status: Number(body.status) || 0,

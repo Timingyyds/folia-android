@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { selectDisplayLyrics, selectDisplayPlayerState, usePlaybackStore } from '../stores/usePlaybackStore';
 import { setIsPanelOpen, setPanelTab, useAppViewStore } from '../stores/useAppViewStore';
@@ -26,6 +26,7 @@ import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
 import { useAutomixSettingsStore } from '../stores/useAutomixSettingsStore';
 import { useDesktopSettingsStore } from '../stores/useDesktopSettingsStore';
 import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
+import { useOnlineProviderAccountStore } from '../stores/useOnlineProviderAccountStore';
 import { usePersonalFmModeStore } from '../stores/usePersonalFmModeStore';
 import { usePlayerChromeSettingsStore } from '../stores/usePlayerChromeSettingsStore';
 import { useSleepTimerStore } from '../stores/useSleepTimerStore';
@@ -36,6 +37,8 @@ import { useLatticeSettingsStore } from '../stores/useLatticeSettingsStore';
 import { useInteractionSettingsStore } from '../stores/useInteractionSettingsStore';
 import type { LyricSegmentationActions } from '../components/app/playback/createLyricSegmentationActions';
 import { selectNativeHomeTabWithoutSurface } from '../components/app/home/foliumHomePageDismissal';
+import { isRecommendationPreferencesOffered } from '../components/recommendationPreferences/useRecommendationPreferencesStore';
+import { omni } from '../services/onlineMusic/omni';
 
 // src/hooks/useCommandPaletteContext.ts
 // Assembles the command palette's namespaced context.
@@ -52,11 +55,21 @@ import { selectNativeHomeTabWithoutSurface } from '../components/app/home/folium
 /** What this hook fills in from stores, i18n and the display selectors. */
 const AMBIENT_KEYS = [
     't', 'currentSong', 'lyrics', 'playerState',
-    'queue', 'isFmMode',
+    'queue', 'isFmMode', 'isRecommendationPreferencesOffered',
     'selectHomeViewTab', 'setPanelTab', 'setIsPanelOpen',
 ] as const;
 
 type AmbientKey = (typeof AMBIENT_KEYS)[number];
+
+// The palette's filtered list only needs to change when the answer changes.
+const subscribeRecommendationPreferencesAvailability = (onChange: () => void) => {
+    const unsubscribeAccount = useOnlineProviderAccountStore.subscribe(onChange);
+    const unsubscribeProviders = omni.subscribeProviders(onChange);
+    return () => {
+        unsubscribeAccount();
+        unsubscribeProviders();
+    };
+};
 
 export type CommandPaletteContextDeps = Omit<
     SharedCommandContextDeps
@@ -77,6 +90,7 @@ export const useCommandPaletteContext = (
     const queue = usePlaybackStore(state => state.playQueue);
     const isFmMode = usePlaybackStore(state => state.isFmMode);
     const queuePaletteKeepOpen = useInteractionSettingsStore(state => state.queuePaletteKeepOpen);
+    const visualizerPickerKeepOpen = useInteractionSettingsStore(state => state.visualizerPickerKeepOpen);
     // What is on screen, transitions included: surfaces that publish lyrics (the mod runtime
     // snapshot) must send the rendered ones, not a guess rebuilt from the song's stored state.
     const lyrics = usePlaybackStore(selectDisplayLyrics);
@@ -86,6 +100,10 @@ export const useCommandPaletteContext = (
     // pauses - so Play paused - while Pause saw no PLAYING to toggle and did nothing at all. Both
     // commands named the opposite of what they did, for up to half a minute per track.
     const playerState = usePlaybackStore(selectDisplayPlayerState);
+    const recommendationPreferencesOffered = useSyncExternalStore(
+        subscribeRecommendationPreferencesAvailability,
+        isRecommendationPreferencesOffered,
+    );
     const ambient = useMemo(() => ({
         t: (key: string, fallback?: string) => t(key, fallback ?? ''),
         currentSong,
@@ -93,6 +111,7 @@ export const useCommandPaletteContext = (
         playerState,
         queue,
         isFmMode,
+        isRecommendationPreferencesOffered,
         // 首页 surface 不在时选原生页签：写 homeViewTab，并关掉开着的模组首页页面（见 foliumHomePageDismissal）。
         selectHomeViewTab: selectNativeHomeTabWithoutSurface,
         setPanelTab,
@@ -143,6 +162,13 @@ export const useCommandPaletteContext = (
     const lyricStaffPolicy = useLyricSettingsStore(state => state.lyricStaffPolicy);
     const lyricStaffAbsorbMode = useLyricSettingsStore(state => state.lyricStaffAbsorbMode);
     const personalFmSelection = usePersonalFmModeStore(state => state.selection);
+    const personalFmCatalogs = usePersonalFmModeStore(state => state.catalogs);
+    const providerFmSelections = usePersonalFmModeStore(state => state.providerSelections);
+    // The picker follows the extra radio on air: its choice and catalogue are read at build time too.
+    const fmStations = usePersonalFmModeStore(state => state.stations);
+    const fmStationCatalogs = usePersonalFmModeStore(state => state.stationCatalogs);
+    const fmOnAir = usePlaybackStore(state => state.isFmMode);
+    const activeProviderId = useOnlineProviderAccountStore(state => state.activeProviderId);
     // Which surface the palette is opening over; commands that only apply to one of them gate on it.
     const view = useAppViewStore(state => state.view);
     // Whoever currently reads typed characters. Identity only changes when a grid takes or gives up
@@ -206,9 +232,11 @@ export const useCommandPaletteContext = (
         ...valueDeps,
         ambient,
         queuePaletteKeepOpen,
+        visualizerPickerKeepOpen,
         settingsSignals, chromeSignals, desktopSignals, automixSignals,
         sleepTimerSignals, latticeSignals, audioSignals, visualizerSignals,
-        lyricStaffPolicy, lyricStaffAbsorbMode, personalFmSelection, view, commandFilter, gridSurface, directorySurface, artistSurface, suiteChrome, canAddCurrentSongToPlaylist,
+        lyricStaffPolicy, lyricStaffAbsorbMode, personalFmSelection, personalFmCatalogs, providerFmSelections, fmStations, fmStationCatalogs, fmOnAir, activeProviderId, view, commandFilter, gridSurface, directorySurface, artistSurface, suiteChrome, canAddCurrentSongToPlaylist,
+        recommendationPreferencesOffered,
         lyricSegmentationRecord, lyricSegmentationActions,
     ]);
 };

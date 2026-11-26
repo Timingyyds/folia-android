@@ -8,7 +8,8 @@ import type { LocalGridViewCollectionDescriptor, OnlineGridViewCollectionDescrip
 /** 把「播放 / 入队」交给应用现有的播放控制器；核心层不知道队列怎么构造。 */
 export interface LibraryPlaybackPort {
     playTrack(track: SongResult, queue: SongResult[]): void;
-    playAll(tracks: SongResult[]): void;
+    /** 以这些歌为队列从头播放；`shuffle` 时先打乱再入队（怎么打乱由宿主的播放控制器决定：均匀洗牌，或开着「一轮不重复」时按轮洗）。 */
+    playAll(tracks: SongResult[], options?: LibraryPlayAllOptions): void;
     enqueueTrack(track: SongResult): void;
     /**
      * 整批入队。`suppressToast` 让队列不弹自己的「已加入」提示（调用方要报自己的，例如歌手页的「已加入 N 首热门歌曲」）；
@@ -20,7 +21,25 @@ export interface LibraryPlaybackPort {
      * 那首的播放键改为它。宿主没给时为 undefined（卡片照旧「立即播放」）。
      */
     togglePlayback?(): void;
+    /**
+     * 收进速记簿（不动队列的暂存区）：这一首或这一批，origin 说从哪收来的（集合名）。宿主没给时为 undefined，
+     * 集合的 collect / collect-scope 入口就不出现。和播放、入队一样是「这些歌交给应用」，所以放在播放端口上。
+     */
+    collectTracks?(tracks: SongResult[], origin?: LibraryCollectOrigin): void;
+    /**
+     * 打开应用的歌单选择器（按歌自己的来源列歌单，在线歌还有「我喜欢」一行），把这几首放进去；与集合变更里只管
+     * Navidrome 的 add-to-playlist 不是一回事。宿主没给时为 undefined。
+     */
+    pickPlaylistFor?(tracks: SongResult[]): void;
+    /** 这首能不能交给选择器（来源支持歌单或红心）；与 pickPlaylistFor 一起给。 */
+    canPickPlaylistFor?(track: SongResult): boolean;
 }
+
+/** 整批播放的选项。`shuffle`：以打乱后的顺序入队（随机播放），不是只打乱已有的队列。 */
+export type LibraryPlayAllOptions = { shuffle?: boolean };
+
+/** 收进速记簿时记下的出处（速记簿行上的小字）。 */
+export type LibraryCollectOrigin = { label: string };
 
 /** 整批入队的选项（与应用播放控制器 addOnlineSongsToQueue 的同名选项一致）。 */
 export type LibraryEnqueueOptions = { suppressToast?: boolean };

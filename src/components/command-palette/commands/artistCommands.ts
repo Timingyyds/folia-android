@@ -1,4 +1,4 @@
-import { ListPlus, Play, RefreshCw, RotateCcw, SquarePen } from 'lucide-react';
+import { ListMusic, ListPlus, Play, RefreshCw, RotateCcw, Shuffle, SquarePen } from 'lucide-react';
 import { createArtistSurfaceCommand } from '../commandFactories';
 import type { CommandPaletteCommand } from '../types';
 
@@ -18,6 +18,14 @@ export const artistCommands: CommandPaletteCommand[] = [
         ['play artist', 'play popular', '播放热门', '播放歌手'],
         'play-top-songs',
         Play,
+    ),
+    createArtistSurfaceCommand(
+        'artist-shuffle-top-songs',
+        'Shuffle play top songs',
+        "Make the artist's playable top songs the play queue in shuffled order",
+        ['shuffle artist', 'shuffle popular', 'random', '随机播放热门', '随机播放歌手', '打乱播放'],
+        'shuffle-top-songs',
+        Shuffle,
     ),
     createArtistSurfaceCommand(
         'artist-enqueue-top-songs',
@@ -50,5 +58,14 @@ export const artistCommands: CommandPaletteCommand[] = [
         ['edit artist', 'artist info', '编辑歌手', '歌手信息'],
         'edit-entity',
         SquarePen,
+    ),
+    // #918：不在任何专辑里的单曲只在「全部歌曲」那一层看得到；只给在线歌手，热门歌曲之外还有歌时才出现。
+    createArtistSurfaceCommand(
+        'artist-open-all-songs',
+        'Open all songs',
+        'List every song by this artist on one page, including singles outside any album',
+        ['every song', 'artist songs', 'singles', '所有歌曲', '单曲'],
+        'open-all-songs',
+        ListMusic,
     ),
 ];

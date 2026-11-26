@@ -76,7 +76,8 @@ export const subscribeToDebugModule = (listener: () => void) => {
 
 const adopt = (state: DebugModuleState | undefined | null) => {
     if (!state) { publish(UNAVAILABLE); return; }
-    publish({ available: true, memoryAvailable: true, filesAvailable: true, ...state });
+    // 桌面主进程不选日志目录：logDirCustom 只有手机那套（SAF 选目录）才有。
+    publish({ available: true, memoryAvailable: true, filesAvailable: true, ...state, logDirCustom: false });
 };
 
 /*
@@ -127,10 +128,16 @@ const loadLocalPaths = async () => {
     publishLocalState();
 };
 
+/** 写入文件的一行：单行截断，避免一个巨大的响应体把日志文件与内存一起撑爆。 */
+const MAX_RUNTIME_LINE_CHARS = 4000;
+
 const formatRuntimeLine = (line: RuntimeLine) => {
     const stamp = new Date(line.at).toISOString();
     const tag = line.tag ? ` [${line.tag}]` : '';
-    return `${stamp} [${line.level}]${tag} ${line.text}\n`;
+    const text = line.text.length > MAX_RUNTIME_LINE_CHARS
+        ? `${line.text.slice(0, MAX_RUNTIME_LINE_CHARS)}… (${line.text.length - MAX_RUNTIME_LINE_CHARS} chars clipped)`
+        : line.text;
+    return `${stamp} [${line.level}]${tag} ${text}\n`;
 };
 
 /** 手机：打开系统目录选择器。SAF 自带授权，不碰「所有文件访问」权限。 */
@@ -263,6 +270,8 @@ const BATCH_MAX = 200;
 type RuntimeLine = { at: number; level: string; tag: string | null; text: string };
 let queue: RuntimeLine[] = [];
 let batchTimer: ReturnType<typeof setTimeout> | null = null;
+/** 一批日志正在写盘：写完才发下一批，避免待写文本在内存里排队堆积。 */
+let writeInFlight = false;
 
 /**
  * Startup lines held until the main process says whether the runtime log is even on.
@@ -274,12 +283,21 @@ let batchTimer: ReturnType<typeof setTimeout> | null = null;
  * never answers cannot grow it without end.
  */
 let startupBuffer: RuntimeLine[] = [];
+let startupBufferChars = 0;
 let stateKnown = false;
 const STARTUP_MAX = 2000;
+/** 启动缓冲还按字符数封顶：行数上限挡不住「一行几 MB」这种情况。 */
+const STARTUP_MAX_CHARS = 400_000;
 
 const flush = () => {
     if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
     if (!queue.length) return;
+    // 写盘是异步的：上一次还没回来就继续发，会让一批批待写文本堆在内存里。
+    // 等它写完再发下一批（日志晚一秒无所谓，堆积到 OOM 才是问题）。
+    if (writeInFlight) {
+        batchTimer = setTimeout(flush, BATCH_MS);
+        return;
+    }
     const lines = queue;
     queue = [];
     const electron = bridge();
@@ -292,10 +310,14 @@ const flush = () => {
     if (!native?.debugAppendLog) return;
     const local = readLocalDebug();
     if (!local.runtimeLogEnabled) return;
+    writeInFlight = true;
     void native.debugAppendLog({
         kind: 'runtime',
         text: lines.map(formatRuntimeLine).join(''),
-    }).catch(error => console.warn('[debug] 运行日志写入失败', error));
+    }).catch(error => console.warn('[debug] 运行日志写入失败', error)).finally(() => {
+        writeInFlight = false;
+        if (queue.length && !batchTimer) batchTimer = setTimeout(flush, BATCH_MS);
+    });
 };
 
 /** Called once the first main-process answer is in: keep the startup lines if logging is on, else drop. */
@@ -303,6 +325,7 @@ const settleStartupBuffer = () => {
     stateKnown = true;
     const held = startupBuffer;
     startupBuffer = [];
+    startupBufferChars = 0;
     if (!held.length) return;
     if (!snapshot.runtimeLogEnabled) return; // logging off, or browser build - discard, do not write
     queue = held.concat(queue);
@@ -310,16 +333,24 @@ const settleStartupBuffer = () => {
 };
 
 const enqueue = (entry: ConsoleLogEntry) => {
-    const line: RuntimeLine = { at: entry.at, level: entry.level, tag: entry.scope, text: entry.text };
+    const text = entry.text.length > MAX_RUNTIME_LINE_CHARS
+        ? `${entry.text.slice(0, MAX_RUNTIME_LINE_CHARS)}…`
+        : entry.text;
+    const line: RuntimeLine = { at: entry.at, level: entry.level, tag: entry.scope, text };
     // Before the first answer, buffer regardless: dropping on the not-yet-known default is what lost
     // the startup lines. Once known, read the switch live - it lives in a settings page that can be
     // flipped mid-session, so a pipe that checked once at install would keep writing after it was off.
     if (!stateKnown) {
-        if (startupBuffer.length < STARTUP_MAX) startupBuffer.push(line);
+        if (startupBuffer.length >= STARTUP_MAX) return;
+        if (startupBufferChars + text.length > STARTUP_MAX_CHARS) return;
+        startupBuffer.push(line);
+        startupBufferChars += text.length;
         return;
     }
     if (!snapshot.runtimeLogEnabled) return;
     queue.push(line);
+    // 写盘慢的时候队列会变长：封顶，丢掉最旧的，宁可日志少几行也不能涨到 OOM。
+    if (queue.length > BATCH_MAX * 10) queue = queue.slice(queue.length - BATCH_MAX * 10);
     if (queue.length >= BATCH_MAX) { flush(); return; }
     if (batchTimer) return;
     batchTimer = setTimeout(flush, BATCH_MS);

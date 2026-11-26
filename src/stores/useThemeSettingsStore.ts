@@ -5,12 +5,17 @@
 // receiving isDaylight as a prop for now: it is read in 187 files, and giving each of them its
 // own subscription would wake 187 components on every toggle without removing the re-render.
 // Changing how it is consumed is a separate, one-shot migration.
+//
+// @note default_theme_daylight（OBS 链接另有 isDaylight 参数）、disable_home_dynamic_background（以及只在迁移时读的旧键 enable_home_dynamic_background） 是用户明确决定「不进外观配置导入导出」的设置（2026-11-08）：配置码也用于 web 版 OBS 链接，
+// 只加 OBS 页面看得到的，这些在 OBS 页面上看不到。不要按 settings-feature-integration「视觉设置必须进
+// buildCurrentConfig / compressConfig / decompressConfig / validKeys / handleImportConfig」的规则把它们补进短码或 JSON。
 
 import { create } from 'zustand';
 import i18n from '../i18n/config';
 
 import { getStoredBoolean, setStoredBoolean } from './storagePrimitives';
 import { setStatusMessage } from './useStatusMessageStore';
+import { isPerfCheckSurface } from '../utils/appSurface';
 
 export const FOLLOW_SYSTEM_THEME_STORAGE_KEY = 'follow_system_theme';
 
@@ -151,7 +156,8 @@ export const selectThemeSettingsSnapshot = (state: ThemeSettingsState) => ({
 
 // Seed Electron's native theme from the stored preference at startup. Lives here rather than in
 // useSettingsUiStore because it reads nothing but this domain.
-if (typeof window !== 'undefined' && window.electron?.setNativeTheme) {
+// Not from the performance check's window, which may not set it (the main window has, already).
+if (typeof window !== 'undefined' && !isPerfCheckSurface && window.electron?.setNativeTheme) {
     const initialTheme = useThemeSettingsStore.getState();
     void window.electron.setNativeTheme(
         initialTheme.followSystemTheme ? 'system' : (initialTheme.isDaylight ? 'light' : 'dark'),

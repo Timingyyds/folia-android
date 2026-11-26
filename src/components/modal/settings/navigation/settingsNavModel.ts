@@ -1,4 +1,4 @@
-import { Boxes, Contrast, Database, Gauge, Keyboard, LayoutGrid, Link2, Monitor, MonitorPlay, PlayCircle, SlidersHorizontal, Terminal, TextAlignStart, type LucideIcon } from 'lucide-react';
+import { Boxes, Contrast, Database, Gauge, Keyboard, LayoutGrid, Link2, Monitor, MonitorPlay, PictureInPicture2, PlayCircle, SlidersHorizontal, Sparkles, Terminal, TextAlignStart, type LucideIcon } from 'lucide-react';
 // src/components/modal/settings/navigation/settingsNavModel.ts
 // Single source of truth for the settings categories: their order in the side list, their grouping,
 // icons and names. A category is cut by what the listener is looking at or doing, so each page holds
@@ -8,14 +8,16 @@ export type SettingsSectionId =
     | 'appearance'
     | 'player'
     | 'home'
+    | 'graphics'
     | 'playback'
     | 'lyrics'
     | 'general'
     | 'interaction'
     | 'integration'
+    | 'ai'
     | 'storage'
     | 'desktop'
-    | 'graphics'
+    | 'remote'
     | 'mods'
     | 'developer';
 
@@ -55,6 +57,7 @@ export const SETTINGS_NAV_GROUP_SPECS: GroupSpec[] = [
             { id: 'appearance', icon: Contrast, labelKey: 'options.settingsPageAppearance' },
             { id: 'player', icon: MonitorPlay, labelKey: 'options.settingsPagePlayer' },
             { id: 'home', icon: LayoutGrid, labelKey: 'options.settingsPageHome' },
+            { id: 'graphics', icon: Gauge, labelKey: 'options.settingsPageGraphics' },
         ],
     },
     {
@@ -72,9 +75,13 @@ export const SETTINGS_NAV_GROUP_SPECS: GroupSpec[] = [
             { id: 'general', icon: SlidersHorizontal, labelKey: 'options.settingsPageGeneral' },
             { id: 'interaction', icon: Keyboard, labelKey: 'options.settingsPageInteraction' },
             { id: 'integration', icon: Link2, labelKey: 'options.settingsPageIntegration' },
+            // 所有 AI 功能共用的接口与密钥：主题生成以及之后用到 AI 的地方都读这一份。
+            // 网页版没有用户侧的密钥（部署自己配），所以只在桌面端出现。
+            { id: 'ai', icon: Sparkles, labelKey: 'options.settingsPageAi', electronOnly: true },
             { id: 'storage', icon: Database, labelKey: 'options.settingsPageStorage' },
             { id: 'desktop', icon: Monitor, labelKey: 'options.settingsPageDesktop', electronOnly: true },
-            { id: 'graphics', icon: Gauge, labelKey: 'options.settingsPageGraphics' },
+            // The Remote Control window is a desktop-app window; its settings key opens this page.
+            { id: 'remote', icon: PictureInPicture2, labelKey: 'options.settingsPageRemote', electronOnly: true },
         ],
     },
     {

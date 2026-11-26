@@ -5,11 +5,12 @@ import { openPonderNavigation } from '../../../../services/ponder/pagePonderTarg
 import { BUILD_KIND_TAGS, getBuildKind } from '../../../../utils/buildProvenance';
 import { PRIMARY_MODIFIER_LABEL } from '../../../../utils/platform';
 import { openDiscordInvite } from '../../../shared/discordCommunity';
-import { QQ_COMMUNITY_GROUP_NUMBER } from '../../../shared/qqCommunity';
+import { openQqCommunityChannel } from '../../../shared/qqCommunity';
 import { HELP_TAB_PLAYER_CONTROLS, HELP_TAB_PRIMARY_SHORTCUTS } from '../../userGuideContent';
-import { Button, CopyButton, CopyValue, Group, Keys, Row, type SettingsGroupDef } from '../kit';
+import { Button, CopyButton, Group, Keys, Row, type SettingsGroupDef } from '../kit';
 import { openOutsideLink } from '../../../../utils/system/outsideLink';
 import { FoundUpdateRow } from './FoundUpdateRow';
+import { ChinaDrivesRow } from './ChinaDrivesRow';
 import { iconLabel } from './iconLabel';
 
 // src/components/modal/settings/pages/HelpPage.tsx
@@ -145,10 +146,8 @@ const HelpPage: React.FC<HelpPageProps> = ({ onOpenReleaseNotes, onOpenAiHelp, o
             <Group def={SUPPORT} bare>
                 <Row label={iconLabel(CircleHelp, t('aiHelp.openButton'))} onClick={onOpenAiHelp} />
                 <Row label={iconLabel(MessageCircle, t('help.joinDiscord'))} onClick={openDiscordInvite} />
-                {/* A QQ group has no link that opens it: the row gives its number to copy. */}
-                <Row label={iconLabel(Users, t('help.communityQq'))}>
-                    <CopyValue value={QQ_COMMUNITY_GROUP_NUMBER} />
-                </Row>
+                {/* QQ 群已换成腾讯频道「Mineradio安卓端」：点这一行直接打开频道链接。 */}
+                <Row label={iconLabel(Users, t('help.communityQq'))} onClick={openQqCommunityChannel} />
             </Group>
 
             <Group def={ABOUT} bare>
@@ -163,6 +162,7 @@ const HelpPage: React.FC<HelpPageProps> = ({ onOpenReleaseNotes, onOpenAiHelp, o
                     <Row sub notice={t(BUILD_KIND === 'unofficial' ? 'options.unofficialBuildNotice' : 'options.selfHostedBuildNotice')} />
                 )}
                 <FoundUpdateRow sub />
+                <ChinaDrivesRow sub quiet />
                 <Row
                     label={(
                         // The settings window counts the clicks and shows the cat at the seventh.
